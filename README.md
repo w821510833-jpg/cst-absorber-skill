@@ -13,12 +13,19 @@ Saved raw results were read separately after closure and retained privately;
 that read did not repair the failed receipt or establish archive writer identity.
 The earlier 0.2.1 failure and manual cleanup remain historical observations.
 
-**0.2.3 is an offline review candidate and has not been run in CST.** The candidate
-adds a documented synchronous completion path, explicit archive-write observations,
-nominal mesh sizing with separate measured acceptance, formal Sigma/density
-readback, and invocation/result provenance. The final offline tests are supplied
-with the regression package. Numerical qualification and physical certification
-remain false. Analysis and plots are screening/diagnostic.
+**0.2.3 native trial: failed measured-mesh acceptance; automatic save, export and
+owned closure recovered.** One unchanged synthetic case used one synchronous
+solver dispatch and reached `SUCCESS`. The failure path automatically retained
+40 raw curves / 5246 samples, with no export errors or archive quarantine. The raw
+maximum edge was again 1.16412; the unchanged 1 mm ceiling failed under the
+project-mm/final-mesh assumption. Getter units and selected mesh/run identity
+remain unverified. Numerical qualification and physical certification are false.
+The tested archive is identified in [0.2.3 findings](references/native-acceptance-0.2.3.md).
+This publication updates documentation and the distribution manifest only;
+all executable code and tests remain byte-for-byte at the tested revision.
+No additional CST run was performed for this documentation update. Existing
+executable capability/history labels have not been revised; use the dated native
+findings for this historical trial, without accepting any future invocation.
 
 `start_solver` returns asynchronously. The separate acceptance path dispatches
 `Model3D.run_solver` once and waits for its documented solver/post-processing
@@ -52,13 +59,21 @@ declared material density; omission does not authorize a default. The inspected
 documentation supplies setters, but no verified getters for the actual FD policy
 or Floquet reference plane. Those values remain unknown and fail closed. Original
 Data, FD and Nth-order Fit leaves retain distinct identities and actual sample
-grids. Invocation/file hash association does not authenticate a native curve's
-solver run or prove which material response the solver used.
+grids. Official GUI help documents linear interpolation of tabulated properties
+with “Fit as in Time Domain” off; its correspondence to the requested setter is
+semantic inference, not actual readback.
+Invocation/file hash association does not authenticate a native curve's solver
+run or prove which material response the solver used. The full-lifecycle CPU peak
+remains unverified. A subsequent read-only catalog returned only run/pass ID 0:
+all 40 leaves use the Current slot with empty parameter combinations. No nonzero
+archived ID was available to establish stronger native run association.
 
 [Write-completion review](references/native-write-completion-review.md) explains
 the root-cause interval, SDK contracts, mesh semantics and remaining evidence.
 [Sanitized historical findings](references/native-acceptance-0.2.2.md) retain the
 earlier evidence. No research-material conclusion follows from the synthetic case.
+[Current evidence and minimum next steps](references/native-acceptance-0.2.3.md)
+record the completed read-only catalog and the still-open qualification gates.
 
 [SKILL.md](SKILL.md) is the agent entry point. Commands are in
 [usage](references/usage.md), capability markers in

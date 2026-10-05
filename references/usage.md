@@ -33,7 +33,8 @@ count. `scenario.reference_plane_m` is an offset from `geometry.cell.height_m`
 along +z into the air: `zref = height_m + reference_plane_m`. The candidate Zmax
 deembedding distance is `reference_plane_m - air_height_m` (nonpositive for a
 reference plane within that air span). Actual complex-S reference-plane readback and a phase benchmark remain
-unresolved. This repair was not rerun in CST.
+unresolved for native qualification. The 0.2.3 synthetic trial ran once and failed
+measured-mesh acceptance; this subsequent documentation-only update adds no run.
 
 Mesh input separates a nominal sizing target from measured acceptance:
 
@@ -115,17 +116,22 @@ and unresolved material/result validation returns `failed` with
 
 The implemented experimental SDK chain creates a fresh owned
 `DesignEnvironment.new()` session and `new_mws()` project, saves only the owned
-project, applies original model history, checks model/mesh readbacks, starts and
-polls the owned solver with bounded abort handling, saves/closes its own project,
+project, applies original model history, checks model/mesh readbacks, uses the
+separate single synchronous run path for acceptance or the retained asynchronous
+start/poll path with bounded abort handling, saves/closes its own project,
 exports the actual saved result tree, optionally maps/analyzes the exports, and
 checks its environment closure. Implementation and injected-interface tests do
 not establish that a CST build has accepted this chain. A prior 0.2.1 single synthetic plate solved successfully, but automatic
 end-to-end acceptance failed after archive identity drift blocked session
 control. Exact-owned manual cleanup and saved raw export were separately
-verified. The 0.2.2 repairs have not been rerun in CST. The prior plate provides
+verified. The 0.2.2 retest confirmed automatic owned closure but still failed
+mesh/archive checks. The 0.2.3 trial confirmed automatic save/export and owned
+closure; unchanged measured-mesh acceptance still failed. This plate provides
 bounded observations of units, one brick, two fundamental modes and power
 closure; it does not validate imported/multiple regions, arbitrary modes, phase,
-resource enforcement, material-solver linkage or this repaired lifecycle. No CLI mock worker is provided. Result receipts
+full-lifecycle resource enforcement or material-solver linkage. Requested-plane
+phase and native result linkage remain unqualified.
+No CLI mock worker is provided. Result receipts
 are preserved; software completion never changes `numerically_qualified=false`
 or `physical_certification=false`.
 
@@ -139,9 +145,9 @@ python scripts/absorber_cli.py run examples/single.json --out-dir outputs/native
 python scripts/absorber_cli.py resume examples/single.json --out-dir outputs/native_acceptance --backend cst --authorize-live --exclusive-resources --acceptance-run
 ```
 
-No real CST invocation was performed while implementing or testing the
-0.2.2 repairs; the prior failed 0.2.1 native trial is documented in
-[native findings](native-acceptance-0.2.2.md). `resume` reuses the controller's integrity,
+The current documentation-only revision adds no CST execution; the completed native trials
+are recorded in [historical findings](native-acceptance-0.2.2.md) and
+[0.2.3 findings](native-acceptance-0.2.3.md). `resume` reuses the controller's integrity,
 ownership and cache checks; it does not relax authorization gates.
 Use `resume` for the same explicit run after a pause. A nonretryable validation
 failure is retained and cannot be resimulated by increasing max_attempts or adding

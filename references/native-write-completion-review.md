@@ -1,6 +1,8 @@
 # 0.2.3-preview：写入完成、网格与正式读回审查
 
-本候选仅离线修改与测试，未启动 CST，也未增加案例、材料或频点。既有 0.2.2
+协议初稿是在离线阶段形成。候选随后已 [一次实测](native-acceptance-0.2.3.md)：
+同步 save/export/owned 关闭恢复，原 mesh 验收仍失败；本次文档和清单
+更新未再次启动 CST，代码及测试保持不变。既有 0.2.2
 合成平板已实测失败：求解器 SUCCESS、owned 自动关闭，但网格比较和归档完整性
 未通过。失败记录、旧哈希及私有原始结果保持原状；本说明不把它们升级为通过。
 
@@ -76,7 +78,9 @@ check/use 窗口。候选保留这些限制，不能宣称全面防篡改或数�
 检查过的 **FDSolver Object** 只发现 `TDCompatibleMaterials` setter，
 **FloquetPort Object** 只发现 `SetDistanceToReferencePlane` setter；没有核实实际
 FD 策略/参考面的正式 getter，不生成猜测的 Get 方法或将 requested 值复制成 actual。
-FD setter 对特定材料类型的描述不能扩大为各向同性体 ε/μ 表的通用插值承诺。
+后续正式 GUI 帮助核查补充：Materials frame L144 明确关闭 “Fit as in Time Domain”
+时其他表格材料属性也线性插值。setter 与复选框仅有文档语义对应，未实测映射；
+不能从政策文档写入 actual 值。详见 [0.2.3 证据](native-acceptance-0.2.3.md)。
 实际 Data、FD、Nth-order Fit 按完整树叶分开，保留真实频点与缺失样点，不最近邻
 替代或插值补齐验收值。FD 样点吻合只是一致性诊断，不能证明实际策略或材料响应链。
 
@@ -100,11 +104,12 @@ solver-material linkage、FD 策略和参考面保持未证实，数值资格为
 | 输入读取 A-B-A、导出时归档替换/删除、曲线身份不完整 | 内容与解析同一快照；关联失效，不认证 native run |
 | 合成/注入接口全部一致 | 仍非 native 验收、非数值认证、非物理认证 |
 
-最终离线测试 489/489 通过（62.058 秒）；首次全套的一项旧竞态测试未到达指定回调，改为事件门驱动后通过，两次日志保留在回归包。focused RED/GREEN 与独立审查不合并计数，不作为实机通过。
+实测 ZIP 在此前离线测试中 489/489 通过（62.058 秒）；首次全套的一项旧竞态测试未到达指定回调，改为事件门驱动后通过，两次日志保留在历史回归包。本次未应用单独的静态元数据/测试补丁，不将该补丁的后续测试计作本次发布证据。focused RED/GREEN 与独立审查不合并计数，不作为实机通过。
 来源为安装版 CST 2025 Python **cst.interface** 中 Project.save、Model3D.start_solver、
 run_solver、is_solver_running、get_solver_run_info，以及上述正式 Help 页面。
 本仓库仅包含原创释义、通用代码与合成测试，不分发厂商帮助正文、SDK 或私有模型结果。
 
 本候选本地源基点为 `ca33b46`。主对话报告 GitHub 已更新至
-`a938754e1bd28b794844e6af85565b86659c6b33`；本轮未 fetch 或验证该远端提交。
+`a938754e1bd28b794844e6af85565b86659c6b33`；协议初稿时未验证。后续 manifest
+修正阶段已只读核对该不可变提交的 53 个文件与历史 0.2.2 ZIP，本次诊断未读写 GitHub。
 补丁与打包内容待审查后再由主对话安排发布，不安装、不推送、不增设许可证或公开性。

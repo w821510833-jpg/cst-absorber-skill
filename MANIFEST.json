@@ -1,10 +1,10 @@
 {
   "schema_version": "cst-absorber-distribution/1",
   "version": "0.2.3-preview",
-  "packaging_revision": "manifest-fix-1",
+  "packaging_revision": "native-evidence-docs-only-1",
   "source_base_commit": "ca33b46cb8489407055d4664b53de3fe99d1282c",
-  "verified_published_base_commit": "a938754e1bd28b794844e6af85565b86659c6b33",
-  "candidate_CST_execution": "not_run",
+  "verified_published_base_commit": "2df840bbde101f97f1b4fb64ead66a66e3b55e5c",
+  "candidate_CST_execution": "completed_0.2.3_native_mesh_validation_failed",
   "prior_0_2_2_native_acceptance": "failed",
   "numerically_qualified": false,
   "physical_certification": false,
@@ -12,7 +12,7 @@
   "excluded_paths": [
     "MANIFEST.json"
   ],
-  "payload_file_count": 61,
+  "payload_file_count": 62,
   "files": [
     {
       "path": ".gitignore",
@@ -21,18 +21,18 @@
     },
     {
       "path": "EVIDENCE.md",
-      "size_bytes": 8859,
-      "sha256": "a10b876dda0b2adcf09fbdea0444a67e6e280d1d3d1be3f9cd3297fbfcadf85a"
+      "size_bytes": 11403,
+      "sha256": "91350a282e6e1b51eb93cbe022d64e209100e9c4d834d2729bce6aa76014c3d4"
     },
     {
       "path": "README.md",
-      "size_bytes": 5786,
-      "sha256": "d84665bfab78d2b373925da69bbc916fad772e96f66aadcd7fa6447606f58777"
+      "size_bytes": 6974,
+      "sha256": "08eefda7401f38c279194512d6c032fa56cf7e6baf60510887cb261c69c65ab6"
     },
     {
       "path": "SKILL.md",
-      "size_bytes": 5337,
-      "sha256": "e2d44661917697d5c3b51774947cbb8ee37b010ad499b096a0943ce1de49780f"
+      "size_bytes": 5710,
+      "sha256": "e554524e028a0a241a3ff0f342c4b2f8475b2e221f39b59c15e212c95598a0eb"
     },
     {
       "path": "agents/openai.yaml",
@@ -96,8 +96,8 @@
     },
     {
       "path": "references/capabilities.json",
-      "size_bytes": 6680,
-      "sha256": "4170f677b2a4f099ffa4bbc4980b626cd4a955c4c18c188222a6e82996298dbb"
+      "size_bytes": 8652,
+      "sha256": "385d10a27fe1518404d32605f702f086233a1d2ca0829067b914c21530faf189"
     },
     {
       "path": "references/config.schema.json",
@@ -106,28 +106,33 @@
     },
     {
       "path": "references/cst-validation.md",
-      "size_bytes": 21098,
-      "sha256": "4deb9f6c9fcbdc941b6924facefdb5794812b6cc314fc7853515a09632d95b7b"
+      "size_bytes": 21447,
+      "sha256": "6a893ad93a937f96738db5436b2cb8953148e995f7771fe3d6558f6d31a0795c"
     },
     {
       "path": "references/native-acceptance-0.2.2.md",
-      "size_bytes": 7679,
-      "sha256": "12ddee8f60fae7635110c765fc6c15d28b3644365c85b8bf124d4b39da4ac664"
+      "size_bytes": 7907,
+      "sha256": "97e2b45ba86e0fcd278bc65e6ef2244ba4b4e4f5b054326b4ca073473875903c"
+    },
+    {
+      "path": "references/native-acceptance-0.2.3.md",
+      "size_bytes": 2717,
+      "sha256": "6ad6129667cc0a830b8e465e124005f9d615576fc91c13c4c61342902222c850"
     },
     {
       "path": "references/native-write-completion-review.md",
-      "size_bytes": 8897,
-      "sha256": "9df9ff2713f12eac51d007c284f646d4760f56ca2c11436bbf1f5265a1cd3125"
+      "size_bytes": 9502,
+      "sha256": "74d3dad2e4da41d58dc1dc9307fbe5e62ad58230a49a08d75efc99fa2ca59685"
     },
     {
       "path": "references/usage.md",
-      "size_bytes": 13999,
-      "sha256": "b79d70231608d1ef910e9fb3683c88555b2200618546cdaf5fc2dca33c8a4a0a"
+      "size_bytes": 14422,
+      "sha256": "6da7d7b7013a36a3abe31c7dd65aff53c8dd3d9b2465bb9bd50fa702cc9aa1f0"
     },
     {
       "path": "references/validation.md",
-      "size_bytes": 5265,
-      "sha256": "1dedbfd8259e84daaabdbd30a4a218b75ca62ccabd7debc85bbc93db268b32ed"
+      "size_bytes": 5603,
+      "sha256": "b71b1504d0a3719602ef2f8d6f78a93efe5c475e5396993d695ac2ec21ec94c9"
     },
     {
       "path": "requirements.txt",
@@ -319,5 +324,8 @@
       "size_bytes": 1778,
       "sha256": "de572adbc0b94989f36c93bc73aa1fb11080f92b9ea60c201dcab033a45206a7"
     }
-  ]
+  ],
+  "tested_candidate_archive_sha256": "396238a221cd4e9ec3acc165a8d62210c43a4bc9f8e70e167b1e0e0907785445",
+  "post_trial_revision_scope": "documentation_only",
+  "post_trial_CST_execution": "not_run"
 }

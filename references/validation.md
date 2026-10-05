@@ -1,7 +1,10 @@
 # Evidence levels and acceptance
 
-The preview validates software contracts using synthetic data. It has not run
-CST, and cannot certify a physical design. `screening_only` is a file-analysis
+The preview validates software contracts using synthetic data. Its single-case
+native trials failed end-to-end acceptance; 0.2.3 recovered automatic save/export
+and owned closure but failed the original measured-mesh gate. It cannot certify
+a physical design. [Current findings](native-acceptance-0.2.3.md) distinguish
+actual observations from remaining gates. `screening_only` is a file-analysis
 result, including when independent CSV power closure passes. Mock controller
 workers prove orchestration behavior, not material import or solver accuracy.
 
@@ -55,7 +58,8 @@ The controller tests explicit case order, immutable content-bound snapshots,
 cache artifact hashes, pause/resume, closure blocking, bounded wall time and
 resource probes, and PID reuse/foreign identity rejection. CPU/mode settings are
 worker obligations; the experimental native worker applies documented solver and
-mesher settings, but real enforcement has not been tested. Offline tests inject
+mesher settings. Current solver usage and two initial mesher stages were observed
+as two threads/cores; whole-lifecycle peak enforcement remains unverified. Offline tests inject
 identity callbacks and vendor surfaces. The authorized native transport observes
 only its newly created PID and uses the complete ownership comparison before SDK
 mutations; it never enumerates or terminates existing processes.

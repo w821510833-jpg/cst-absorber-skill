@@ -4,7 +4,9 @@ The native backend is an **implemented experimental execution chain**.
 The 0.2.2 original synthetic plate was retested: solver SUCCESS and automatic
 owned closure were confirmed, but native end-to-end acceptance **failed** on
 mesh/archive evidence. The earlier 0.2.1 failure remains historical.
-**0.2.3-preview is an offline review candidate and has not been run in CST.** See
+**0.2.3-preview was run once: solver SUCCESS and automatic save/export/owned
+closure were confirmed, but the original measured-mesh acceptance failed.** See
+[current findings and completed read-only catalog](native-acceptance-0.2.3.md),
 [sanitized findings](native-acceptance-0.2.2.md) and
 [completion review](native-write-completion-review.md). Preparation is offline.
 Explicit authorization, exclusive resources and acceptance-run/result-profile
@@ -71,14 +73,16 @@ and other geometry paths remain unaccepted. A watertight input STL is insufficie
 Prepared canonical samples use exp(+j omega t), with epsilon=epsilon'-j epsilon'' and mu=mu'-j mu''. Native table commands receive **positive loss columns** epsilon'' and mu''. The configuration sampler folds electrical conductivity into epsilon once when the original table excludes it; the native candidate sets Sigma to zero. Original conductivity and the native zero value remain in the expected-material table. Tables already containing conductivity are not given another conductivity contribution.
 
 The native candidate uses the documented general Nth-order fitting interface.
-It also requests FDSolver.TDCompatibleMaterials=False. The inspected setter
-documentation discusses particular material types and does not establish a general
-volumetric epsilon/mu table-interpolation guarantee. No actual FD policy getter
-was verified. Data list, FD - Interpolated and Fit are distinct actual source
+It also requests FDSolver.TDCompatibleMaterials=False. The official GUI Materials
+frame documents linear interpolation of other tabulated properties with
+“Fit as in Time Domain” off. The inspected VBA setter describes particular
+material types; setter/checkbox correspondence is semantic inference. Neither
+source is an actual policy getter. Data list, FD - Interpolated and Fit are distinct actual source
 roles; a title containing Fit does not establish leaf role. Requested settings
 and matching FD curves do not prove actual solver linkage. Candidate formal
 Material.GetSigma XYZ and Material.GetRho read actual shape-assigned parameters;
-they have not been exercised natively in this candidate. All Sigma axes must be
+the 0.2.3 synthetic trial observed Sigma XYZ=0 S/m and Rho=1000 kg/m3, matching
+that case's declarations. All Sigma axes must be
 zero when conductivity was folded into epsilon once. Declared per-material
 density is compared without an invented default. Nth-order Fit is an approximation
 distinct from the observed FD curve and the core's piecewise-linear sampling. Native fitted curves must be exported and compared
@@ -231,7 +235,7 @@ The following are relative paths within the installed **public CST 2025 Online H
 | Saved-project result tree, complex data, labels | `Python/source/cst.results.html` |
 | Material Epsilon, Mu, Sigma, Rho and numeric dielectric/magnetic fitting | `mergedProjects/VBA_3D/special_vbalayer/special_vbalayerolayer_object.htm` (page title: Material Object) |
 | Engineering loss sign and conductivity loss | `mergedProjects/3D/special_overview/special_overview_material_overview_hf.htm` |
-| FD materials settings, scoped to their documented material types; no actual policy getter verified | `mergedProjects/3D/special_solvopt/special_solvopt_w3d_specials.htm` (Materials frame); `mergedProjects/VBA_3D/special_vbasolver/special_vbasolver_fdsolver_object.htm` |
+| GUI linear table policy with TD fit off; setter scope and semantic correspondence; no actual policy getter verified | `mergedProjects/3D/special_solvopt/special_solvopt_w3d_specials.htm` (Materials frame, lines 143–146); `mergedProjects/VBA_3D/special_vbasolver/special_vbasolver_fdsolver_object.htm` (lines 415–418) |
 | Brick and explicit STL unit import | `mergedProjects/VBA_3D/common_vbabasicsolids/common_vbabrick_object.htm`; `mergedProjects/VBA_3D/common_vbaimpexp/common_vbaie_stl.htm` |
 | Region material assignment and solid queries | `mergedProjects/VBA_3D/common_vbasolido/common_vbasolido_solid_object.htm` |
 | Explicit lattice and scan-angle conventions | `mergedProjects/VBA_3D/special_vbasolver/special_vbasolver_boundary_object.htm` |

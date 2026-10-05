@@ -1,16 +1,21 @@
 # Candidate evidence — 0.2.3-preview
 
-**This is an offline review candidate; it has not been run in CST. The completed
-0.2.2 native retest failed end-to-end acceptance despite solver SUCCESS and
-confirmed automatic owned closure. Numerical qualification and physical
-certification remain false.**
+**The 0.2.3 candidate was run once: solver SUCCESS, automatic save/export and
+owned closure were confirmed, but unchanged measured-mesh acceptance failed.
+Numerical qualification and physical certification remain false. Subsequent
+offline changes in this publication update documentation and the manifest only.
+Executable code and tests are unchanged.**
 
 ## Offline verification
 
-The final integrated command is `python -B -m unittest discover -s tests -v`.
-The candidate code passed 489/489 tests in 62.058 seconds (exit 0). The manifest-only correction changes no scripts, tests or example inputs; its archive and patch checks are recorded separately.
-The 0.2.2 source previously passed 376 offline tests in 46.875 seconds; that is
-historical evidence for that source, not the candidate's final suite result.
+The tested native archive's earlier integrated offline command was
+`python -B -m unittest discover -s tests -v`. Its producer reported 489/489
+passing tests in 62.058 seconds (exit 0). This is evidence for that immutable
+archive, not a new full-suite execution for this documentation-only publication.
+No executable code, tests, solver/session/cleanup controls, mesh threshold or
+example input is changed here. The separate static-metadata/test patch is excluded.
+The earlier 0.2.2 source passed 376 offline tests in 46.875 seconds; that remains
+historical evidence for the earlier source.
 
 Candidate regressions address the named solver/save operation window, caller-only
 archive pin acceptance, late/cancelled/failed completion, strict alias/path/object
@@ -23,11 +28,41 @@ and any unresolved results.
 
 Pure injected interfaces, worker threads and temporary synthetic files establish
 software behavior. They cannot establish native compatibility, an archive writer,
-file durability, material usage by a solver, or numerical accuracy. No dependency
-was installed and no CST process, new case, material or frequency was started for
-this candidate. The prior verified environment was Python 3.12.7, NumPy 2.3.5,
+file durability, material usage by a solver, or numerical accuracy. This offline
+evidence revision installed no dependency and started no CST process or SDK call.
+The candidate's earlier real trial is recorded separately below. The verified
+environment was Python 3.12.7, NumPy 2.3.5,
 Trimesh 4.11.5, Matplotlib 3.10.8 and JSON Schema 4.26.0; other allowed dependency
 versions were not exhaustively tested.
+
+## 0.2.3 native trial and offline diagnosis
+
+One unchanged synthetic case used one synchronous `Model3D.run_solver` dispatch.
+Solver info reported SUCCESS. The failed-mesh branch automatically saved the
+project, closed it, exported 40 actual curves / 5246 points without export errors,
+and closed the exact-owned environment. Stable operation snapshots and caller
+acceptance bound the saved archive; later failed-run preservation retained a new
+explicit final-save binding. No quarantine occurred. CLI exit 2 and
+`native_mesh_validation_failed` remain failures; no canonical mapping or physical
+success cache was produced. The tested immutable ZIP's SHA-256 is
+`396238a221cd4e9ec3acc165a8d62210c43a4bc9f8e70e167b1e0e0907785445`.
+
+Raw maximum edge 1.16412 exceeds the unchanged 1 mm ceiling only under the
+project-mm/final-mesh assumption. The getter's units and selected mesh/run
+identity remain unverified. The failed receipt is not rewritten or accepted.
+Formal GetSigma XYZ=0 S/m and GetRho=1000 kg/m3 matched this synthetic case's
+declarations; parameter agreement does not prove the solver's material-source link.
+
+The subsequent read-only run/pass catalog returned only [0]. All 40 result leaves
+use the Current slot, ID 0, with empty parameter combinations ({}). No nonzero
+archived ID was available. This completes the catalog lookup but does not establish
+unique native curve/solver-run authentication or numerical qualification.
+CPU peak enforcement, actual FD policy, reference-plane evidence and native
+solver/material-response linkage remain open. No additional solve is claimed.
+
+[0.2.3 findings](references/native-acceptance-0.2.3.md) records the bounded native
+result and completed read-only catalog. It does not authorize another case,
+parameter marker, threshold change or new solve.
 
 ## Historical 0.2.2 native retest
 
@@ -67,13 +102,13 @@ identifiers are excluded from this distribution.
 | Component | Candidate offline evidence / design | Real observation and remaining gate |
 | --- | --- | --- |
 | Geometry/material/scenario core | Generic and multi-region fixtures | One synthetic brick observed; imported and multiple native regions unverified |
-| Held controls and archive integrity | Named synchronous completion/save window; caller-only pin; sticky quarantine | 0.2.2 owned closure confirmed; new completion path not run; writer and durability unproved |
-| Native lifetime supervisor | Pending SDK and cleanup obligations retained | 0.2.2 automatic shutdown confirmed; synchronous candidate path not run |
+| Held controls and archive integrity | Named synchronous completion/save window; caller-only pin; sticky quarantine | 0.2.3 automatic save/export and owned closure confirmed; writer and durability unproved |
+| Native lifetime supervisor | Pending SDK and cleanup obligations retained | 0.2.3 automatic shutdown and drained completion confirmed |
 | Units, lattice and modes | Strict contracts and source comparisons | Two vacuum fundamental modes observed; general mode/power normalization unresolved |
 | Mesh | Nominal target separated from measured ceiling; oversize report retained | 1.16412 mm under assumptions exceeded legacy 1 mm; units/freshness unverified; no enforced hard cap |
-| CPU and reference plane | Scoped resource evidence retained; unknown plane stays blocked | Prior solver-stage CPU=2; global peak and complex-S plane/phase unresolved |
-| Formal material parameters | Actual-shape Sigma XYZ/Rho getter generation and strict parser | Candidate getter path not run; parameter agreement does not prove solver usage |
-| Material Data / FD / Fit | Exact leaves and real grids remain distinct | Prior synthetic FD matched and Fit deviated; actual FD policy and response linkage unknown |
+| CPU and reference plane | Requested settings and evidence gates retained | Global CPU peak and actual reference-plane qualification remain unresolved |
+| Formal material parameters | Actual-shape Sigma XYZ/Rho getter generation and strict parser | Current native XYZ=0 S/m and Rho=1000 kg/m3 match; parameter agreement does not prove solver usage |
+| Material Data / FD / Fit | Exact leaves and real grids remain distinct | Actual FD policy and solver-response linkage remain unverified |
 | Solver/result association | Case/operation/file hashes and actual curve IDs retained | Same invocation is weaker than native curve-run authentication |
 
 The documented synchronous `run_solver` waits for solver and post-processing.
@@ -84,8 +119,9 @@ by ordinary path/hash checks. Outside-window changes and invalid bindings remain
 quarantined. A pending synchronous request cannot be concurrently aborted or
 closed, and caller expiry does not terminate native work immediately.
 
-The inspected FD policy setter documentation is not evidence of a general
-volumetric epsilon/mu interpolation promise. Requested policy and observed FD
+Official GUI help documents linear interpolation of tabulated material
+properties with TD fit off. Setter/checkbox correspondence is semantic inference;
+requested policy and observed FD
 curves remain distinct from an actual policy getter. Unknown unit, freshness,
 CPU, plane, policy and solver-material linkage gates cannot be cleared by an empty
 adapter list, matching numeric values, a configured value or an injected SDK.
@@ -107,11 +143,13 @@ marker policy. These figures are synthetic examples, not native measurements.
 
 ## Package boundary
 
-`MANIFEST.json` is a repository file and is included in the full ZIP. It records
-all 61 other distribution files using safe relative paths, SHA-256 and byte sizes.
+`MANIFEST.json` records the current repository distribution. It records
+all 62 other current distribution files using safe relative paths, SHA-256 and byte sizes.
 The manifest explicitly excludes itself (`excluded_paths=["MANIFEST.json"]`);
-there are 62 files in the full ZIP. Its own hash and size are recorded in the
-separate review-package source record. This avoids a recursive self-hash.
+the current source set has 63 files including the manifest. The immutable tested
+ZIP retains its original 62 files and hash. The manifest is regenerated for these exact published bytes; it does not
+claim to describe the unchanged immutable tested ZIP. Excluding itself avoids
+a recursive self-hash.
 
 Bundles contain only original generic code, documents and synthetic examples/tests
 from explicit categories. Private work, real native logs, machine/account paths,
@@ -119,10 +157,14 @@ research data, native models/results and vendor code/help are excluded. Every
 archive is inspected; ignore rules do not remove tracked files. No open-source
 license is selected. This correction does not install or push GitHub.
 
-The local-base patch targets `ca33b46`, where the manifest was absent. A separate
+The earlier local-base patch targets `ca33b46`, where the manifest was absent. A separate
 remote-base patch targets `a938754e1bd28b794844e6af85565b86659c6b33` and updates its
-existing 0.2.2 manifest rather than adding a conflicting second file. This round
-read the immutable GitHub commit/tree/manifest without writing GitHub; all 53
+existing 0.2.2 manifest rather than adding a conflicting second file. That earlier
+packaging review read the immutable GitHub commit/tree/manifest; all 53
 remote blobs matched the historical 0.2.2 archive. Both patches are applied to
 their exact baseline copies, then every one of the 62 resulting files is checked
-against the final distribution. Neither path may leave the old 0.2.2 manifest.
+against that immutable candidate distribution. Neither path may leave the old 0.2.2 manifest.
+The new sanitized documentation delta targets that exact tested ZIP's file bytes;
+the separate static-metadata/test delta is not applied. Executable capability/history
+labels and tests remain unchanged. These documentation changes do not overwrite
+the archive that was actually tested.

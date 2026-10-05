@@ -1,6 +1,6 @@
 # 合成平板实机验收：0.2.1 历史与 0.2.2 已实测失败
 
-0.2.1 和后续 0.2.2 实测各自只运行同一个原创合成平板、一次真实求解；两次自动端到端验收均失败。0.2.1 通过准确 owned 对象不保存关闭分别收尾；0.2.2 已确认 owned 自动关闭，无人工终止。旧失败记录及私有 raw 证据未改写。当前 0.2.3-preview 仅离线修复，未运行 CST、增加案例或安装软件，详见 [完成协议审查](native-write-completion-review.md)。本说明不包含机器路径、进程标识、账户、研究材料、模型文件或原生日志。
+0.2.1 和后续 0.2.2 实测各自只运行同一个原创合成平板、一次真实求解；两次自动端到端验收均失败。0.2.1 通过准确 owned 对象不保存关闭分别收尾；0.2.2 已确认 owned 自动关闭，无人工终止。旧失败记录及私有 raw 证据未改写。随后 [0.2.3 单次实测](native-acceptance-0.2.3.md)确认自动保存、导出及 owned 关闭恢复，原网格验收仍失败；本轮后续离线证据修订未再次运行 CST。本说明不包含机器路径、进程标识、账户、研究材料、模型文件或原生日志。
 
 ## 0.2.1 历史记录
 
@@ -17,7 +17,7 @@
 
 材料偏差须区分三个实际来源角色。`Data list` 是原表，`FD - Interpolated` 是频域插值响应，`Fit` 是 Nth-order pole 拟合曲线；它们的 title 可能都含 Fit，不能只看标题。合成本例 `Eps'' (Fit)` 在 1/2 GHz 为 0.124952/0.247053，相对输入 0.2 差 −37.52%/+23.53%，而 Fit 的密集原始网格没有精确 1.5 GHz 点。FD 插值四个实/损耗分量在计划三点完全吻合输入。
 
-代码请求 `FDSolver.TDCompatibleMaterials=False`。检查过的正式 setter 文档描述特定材料类型，不能扩大为本各向同性体 ε/μ 表的通用线性插值保证。实际 FD 曲线吻合是诊断事实；Nth-order Fit 的近似偏差不能直接当作该 FD 求解实际使用的材料偏差。尚无已核实的 actual policy getter 与 solver-response linkage，不据此判定材料门禁通过。此分析只涉及原创合成常量损耗表，没有分析或推断任何研究材料。
+代码请求 `FDSolver.TDCompatibleMaterials=False`。当时核查仅依据 setter 对特定材料类型的描述；[后续 0.2.3 文档核查](native-acceptance-0.2.3.md)发现 GUI 帮助明确支持 TD fit 关闭后的表格属性线性插值。setter/checkbox 映射仍属语义推断。实际 FD 曲线吻合是诊断事实；Nth-order Fit 的近似偏差不能直接当作该 FD 求解实际使用的材料偏差。尚无已核实的 actual policy getter 与 solver-response linkage，不据此判定材料门禁通过。此分析只涉及原创合成常量损耗表，没有分析或推断任何研究材料。
 
 ## 0.2.2 离线修复与后续实测
 
@@ -37,11 +37,11 @@
 
 关闭后另行只读导出保存结果，保留 40 curves / 5246 samples、零读取错误；此为私有诊断，不是控制器自动成功，也未重绑定原 quarantine。FD 四分量三点与合成输入相符，Fit 仍有偏差与缺失精确样点；native Sigma/Rho、FD policy、参考面及实际 solver-material response 绑定没有因此通过。
 
-当前 0.2.3 候选改为独立的一次同步 `run_solver` 完成/后处理→显式 owned 保存→稳定快照→调用方提交 pin，并增加阶段观察，详见 [完成协议审查](native-write-completion-review.md)。这只是有期限和身份限制的 SDK 操作信任边界，不证明写入者或文件持久化，不清除旧 quarantine，未实机验收。
+0.2.3 候选改为独立的一次同步 `run_solver` 完成/后处理→显式 owned 保存→稳定快照→调用方提交 pin，并增加阶段观察，详见 [完成协议审查](native-write-completion-review.md)。后续单次实测确认 save/export/owned 关闭恢复，但未通过端到端网格验收。这只是有期限和身份限制的 SDK 操作信任边界，不证明写入者或文件持久化，不清除旧 quarantine。
 
 | 0.2.2 尚未闭合的门禁 | 保留原因 |
 | --- | --- |
-| 实机修复验收 | 0.2.2 已单次实测但自动端到端失败；0.2.3 同步完成候选尚未运行 CST |
+| 实机修复验收 | 0.2.2 自动端到端失败；0.2.3 已单次实测，save/export/owned 关闭恢复，mesh 验收仍失败 |
 | archive 写入归属/稳定快照 | 仅靠 stat、PID 或 filename 不能证明异步写入者；隔离会继续阻断自动保存/导出 |
 | 材料 solver-response linkage | 输入表、FD、Fit 已分清；0.2.2 未执行 Sigma/Rho getter；0.2.3 加正式参数读回，但 actual FD policy/source 使用与 solver-response linkage 仍未知 |
 | 参考面与复相位 | 当前公开 FloquetPort 文档没有已确认的参考距离 getter；配置距离和实际复 S 不等于 plane 读回或相位基准 |

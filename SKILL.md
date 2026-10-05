@@ -5,7 +5,7 @@ description: Use when a user requests CST periodic PEC-backed absorber simulatio
 
 # CST absorber — single first
 
-**0.2.3-preview 为离线审查候选，未运行 CST。0.2.2 已实测：求解 SUCCESS、owned 自动关闭，但网格与归档门禁未通过，端到端验收失败。**
+**0.2.3-preview 已实测：求解 SUCCESS，自动保存、失败证据导出和 owned 关闭恢复；原网格验收仍失败，数值资格为 false。本次发布只更新文档和清单，代码及测试保持实测版本原样，没有再次运行 CST。**
 先读 [能力边界](references/capabilities.json)。注入测试不证明实机兼容、材料响应或
 数值精度。技能不提供 CST 许可证，也不替代执行授权和工具审批。
 
@@ -32,7 +32,7 @@ azimuth 为 0°、一次 TE 或 TM。透射双端口、各向异性、表面阻�
    用户已授权真实求解且资源独占时，使用 `run`/`resume` 的
    `--backend cst --authorize-live --exclusive-resources`，明确选择
    `--acceptance-run` 或 `--result-profile PATH`。未满足条件不创建会话。
-   后续实机运行须符合该次用户授权；本候选没有实机通过记录。
+   后续实机运行须符合该次用户授权；本候选没有端到端实机通过记录。
 3. 验收保存实际树、run ID、原始复数/单位、功率和读回。同步完成路径只调用一次
    `run_solver`，经 owned 检查、显式保存、稳定快照及调用方接受后绑定归档哈希；
    不得在异步启动后用第二次求解冒充等待，也不得修复历史 quarantine 为成功。
@@ -46,6 +46,9 @@ azimuth 为 0°、一次 TE 或 TM。透射双端口、各向异性、表面阻�
    入射列、模态编号/参数、TE/TM 及全部功率分支；不得猜叶节点或 Gamma 单位。
    冲突读数保留为无效证据，不参与分析。`analyze-native` 只诊断同次保存的原始树，
    不创建会话或再次求解，来源未验证，PEC 的 T=0 为边界假设。
+   [本次证据](references/native-acceptance-0.2.3.md)中的实际参数限定于一个合成样品。
+   后续只读目录仅返回 Current ID 0，40 个 leaf 的参数组合均为空；
+   没有非零存档 ID，不据此清除 native run 关联或数值资格门禁。
 5. 对明确来源 CSV 执行 `analyze`；合成输入标 `--export-origin synthetic`。保留全传播
    模式 R、R00、独立功率 A、原始 T 与 PEC 理论 T=0、复 S/Gamma 和实际频点。
    模式/频点缺失、Gamma 或功率闭合失败则停止。交付指标 JSON、实际点 CSV、

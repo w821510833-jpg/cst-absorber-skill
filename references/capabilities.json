@@ -1,11 +1,11 @@
 {
   "version": "0.2.3-preview",
-  "release_type": "offline-review-candidate",
+  "release_type": "experimental_native_mesh_failed_offline_evidence_revision",
   "scope": "periodic-pec-single-or-explicit-batch",
   "single_case_default": true,
   "implicit_expansion": false,
-  "live_CST_execution": "experimental_explicit_admission_candidate_offline_only",
-  "real_CST_acceptance": "candidate_not_run_completed_0.2.2_native_retest_failed",
+  "live_CST_execution": "experimental_explicit_admission_native_0.2.3_trial_completed",
+  "real_CST_acceptance": "0.2.3_native_mesh_validation_failed",
   "numerical_certification": false,
   "profiles": {
     "periodic-pec": "offline_contract_analysis_and_experimental_executor",
@@ -29,19 +29,21 @@
     "material_fit_readback": "split_actual_Data_FD_Fit_roles_offline_tested_solver_linkage_unresolved",
     "density_and_region_mass": "available_when_density_is_declared",
     "FD_response_role": "actual_FD_curve_distinct_from_Data_and_Nth_order_fit_policy_getter_unknown",
-    "native_conductivity_readback": "formal_GetSigma_XYZ_helper_offline_tested_native_candidate_not_run",
-    "native_density_readback": "formal_GetRho_helper_offline_tested_native_candidate_not_run",
-    "fd_policy_readback": "no_verified_formal_getter_unknown_fail_closed"
+    "native_conductivity_readback": "formal_GetSigma_XYZ_observed_zero_in_0.2.3_single_synthetic_case",
+    "native_density_readback": "formal_GetRho_observed_declared_1000kg_per_m3_in_0.2.3_single_synthetic_case",
+    "fd_policy_readback": "no_verified_formal_getter_unknown_fail_closed",
+    "documented_GUI_table_policy": "linear_tabulated_properties_with_Fit_as_in_Time_Domain_off",
+    "setter_checkbox_mapping": "semantic_correspondence_not_observed"
   },
   "runtime": {
     "injected_worker_controller": "offline_tested",
     "owned_process_action": "held_owned_session_controls_offline_tested_with_full_identity_guards",
-    "live_CST_cleanup": "confirmed_automatic_owned_closure_in_0.2.2_retest_candidate_not_run",
-    "solver_CPU_limit_enforcement": "prior_solver_stage_two_observed_global_peak_enforcement_unresolved",
+    "live_CST_cleanup": "confirmed_automatic_owned_closure_in_0.2.3_trial",
+    "solver_CPU_limit_enforcement": "full_lifecycle_peak_unverified",
     "pending_SDK_request": "native_CLI_durable_supervision_no_concurrent_mutation_unknown_retains_lifetime",
     "pause_resume": "explicit_after_lock_content_and_owned_closure_validation",
     "archive_integrity": "explicit_synchronous_run_save_operation_stable_snapshot_caller_pin_sticky_quarantine",
-    "synchronous_completion": "single_Model3D_run_solver_waits_solver_and_postprocessing_candidate_offline_only",
+    "synchronous_completion": "single_Model3D_run_solver_waits_solver_and_postprocessing_observed_in_0.2.3_trial",
     "asynchronous_completion": "start_poll_path_keeps_strict_archive_guards_no_async_repin",
     "archive_writer_identity_proven": false,
     "archive_durability_guaranteed": false,
@@ -65,25 +67,26 @@
     "style_and_versions"
   ],
   "execution_implemented": true,
-  "software_verification": "489_offline_tests_passed_in_62.058_seconds_candidate_native_not_run",
+  "software_verification": "tested_archive_489_offline_tests_passed_in_62.058_seconds_historical_no_new_full_suite_claim",
   "native_adapter": {
-    "fresh_session_history_solver_export_closure": "candidate_offline_only_0.2.2_solver_and_closure_completed_E2E_failed",
+    "fresh_session_history_solver_export_closure": "0.2.3_solver_save_export_and_owned_closure_confirmed_E2E_mesh_failed",
     "result_mapping": "exact_profile_declared_diagnostic_only",
     "reference_plane_readback": "no_verified_formal_getter_actual_unknown_fail_closed",
     "material_fit_readback": "actual_Data_FD_Fit_separated_no_verified_solver_response_linkage",
     "mesh_edge_unit_and_freshness": "unresolved",
-    "acceptance_run_success": "never_established_candidate_not_run",
+    "acceptance_run_success": "not_established_native_mesh_validation_failed",
     "certification": false,
     "excitation_identity": "actual_incident_matrix_column_and_same_power_branch_required",
     "contradictory_raw_curves": "preserved_invalid_and_excluded_from_analysis",
     "mesh_readback": "documented_type_cells_min_max_and_configured_mesher_count_offline_tested",
-    "solver_cpu_readback": "prior_actual_solver_stage_record_two_global_peak_unverified",
+    "solver_cpu_readback": "full_lifecycle_peak_unverified",
     "held_control_archive_separation": "implemented_offline_regressed_no_qualification",
     "durable_CLI_supervision": "implemented_offline_regressed",
     "solver_result_provenance": "case_operation_file_association_weaker_than_native_curve_run_authentication",
     "native_solver_curve_run_linkage": false,
     "material_solver_response_linkage": false,
-    "archive_completion": "documented_synchronous_computation_plus_explicit_SDK_save_trust_boundary_not_writer_drain_proof"
+    "archive_completion": "documented_synchronous_computation_plus_explicit_SDK_save_trust_boundary_not_writer_drain_proof",
+    "reference_plane_phase_diagnostic": "not_numerically_qualified"
   },
   "prior_native_trial": {
     "version": "0.2.2-preview",
@@ -101,7 +104,7 @@
     "raw_export": "separate_readonly_saved_result_read_after_owned_closure_not_controller_success",
     "raw_export_curves": 40,
     "raw_export_points": 5246,
-    "repair_native_run": "not_run_0.2.3_candidate",
+    "repair_native_run": "completed_0.2.3_single_case_mesh_failed_see_current_native_trial",
     "numerically_qualified": false,
     "report": "references/native-write-completion-review.md"
   },
@@ -120,5 +123,51 @@
     "automatic_end_to_end": "failed",
     "manual_exact_owned_cleanup": "separately_confirmed",
     "report": "references/native-acceptance-0.2.2.md"
-  }
+  },
+  "current_native_trial": {
+    "version": "0.2.3-preview",
+    "case_count": 1,
+    "solver_dispatch_count": 1,
+    "input_origin": "unchanged_original_synthetic_flat_plate",
+    "solver_state": "SUCCESS",
+    "automatic_end_to_end": "failed",
+    "failure_reason": "native_mesh_validation_failed",
+    "automatic_save_export": "confirmed",
+    "automatic_exact_owned_cleanup": "confirmed",
+    "archive_quarantine": false,
+    "raw_export_curves": 40,
+    "raw_export_points": 5246,
+    "nominal_mesh_target_m": 0.001,
+    "legacy_measured_ceiling_m": 0.001,
+    "reported_raw_maximum_edge": 1.16412,
+    "getter_unit_and_selected_mesh_run_identity_verified": false,
+    "native_Sigma_XYZ_S_m": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "native_density_kg_m3": 1000.0,
+    "full_lifecycle_CPU_peak_verified": false,
+    "curve_run_slot": 0,
+    "native_unique_curve_solver_run_linkage": false,
+    "tested_archive_sha256": "396238a221cd4e9ec3acc165a8d62210c43a4bc9f8e70e167b1e0e0907785445",
+    "post_trial_revision": "documentation_only_no_additional_CST_execution",
+    "numerically_qualified": false,
+    "report": "references/native-acceptance-0.2.3.md",
+    "exit_code": 2,
+    "read_only_run_pass_catalog": {
+      "all_run_pass_ids": [
+        0
+      ],
+      "leaf_count": 40,
+      "leaf_run_ids": [
+        0
+      ],
+      "parameter_combinations": {},
+      "nonzero_archived_id_available": false,
+      "native_unique_curve_solver_run_linkage": false
+    }
+  },
+  "post_trial_revision_scope": "documentation_and_distribution_manifest_only_executable_code_and_tests_unchanged",
+  "executable_history_metadata": "unchanged_at_tested_revision_use_dated_native_findings_for_historical_trial"
 }

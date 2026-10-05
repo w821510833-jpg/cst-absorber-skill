@@ -1,7 +1,9 @@
 {
-  "version": "0.2.1-preview",
-  "CST_execution": "not_run",
-  "CST_acceptance": "not_run",
+  "version": "0.2.2-preview",
+  "source_commit": "ca33b46cb8489407055d4664b53de3fe99d1282c",
+  "repair_native_execution": "not_run",
+  "prior_native_E2E_acceptance": "failed",
+  "physical_certification": false,
   "license_selected": false,
   "files": [
     {
@@ -10,14 +12,24 @@
       "sha256": "c6c6d6c7889b3295a7c758938342a1314ee233e285415a7102c6d6dc70084821"
     },
     {
+      "path": "EVIDENCE.md",
+      "size_bytes": 6715,
+      "sha256": "f06ff628a2c96bdf597d531b8494f9d689588ef9129a999f2d7ef56e2d6c8409"
+    },
+    {
+      "path": "README.md",
+      "size_bytes": 4469,
+      "sha256": "5a906fa685490431311b1b1cd9036fa58296751e71c8a7acbd18a5c6393916ed"
+    },
+    {
+      "path": "SKILL.md",
+      "size_bytes": 4791,
+      "sha256": "add4ae321cebde44c798b1c49c079289eaf0c1aa6437823ed706130a4cc68ad5"
+    },
+    {
       "path": "agents/openai.yaml",
       "size_bytes": 521,
       "sha256": "b49477e110f4251bbc304be5634e4ac95668650a5bc04bdec80fd6bbbc486ca6"
-    },
-    {
-      "path": "EVIDENCE.md",
-      "size_bytes": 7408,
-      "sha256": "1ffd17c98824b41aff79224ec996e0b22e2db20264c89d33284f0decef9f5a11"
     },
     {
       "path": "examples/batch.json",
@@ -75,14 +87,9 @@
       "sha256": "9b8555504a83bbc29448fa2ada5af060ac41c3f9beb1a885a373599fee445bb2"
     },
     {
-      "path": "README.md",
-      "size_bytes": 2857,
-      "sha256": "506e606c94ad3c0fa8c847a5023d7f6fd9c9c7bb2f7e745ed23114cc5a8c5234"
-    },
-    {
       "path": "references/capabilities.json",
-      "size_bytes": 2997,
-      "sha256": "8a3007303b2d18bb1def1e2932fc2681d09374752d1d41a1001a86c97ecaa555"
+      "size_bytes": 4484,
+      "sha256": "55d5bc4fd9663a82b74158ed717fd4a09b9830a338ff797930d7f1479c5727e4"
     },
     {
       "path": "references/config.schema.json",
@@ -91,13 +98,18 @@
     },
     {
       "path": "references/cst-validation.md",
-      "size_bytes": 16330,
-      "sha256": "c72e64c53816f0664351bb2143e64f6a68e4ea24483896a102935814e95dfe74"
+      "size_bytes": 18678,
+      "sha256": "24a33ce6cb46dfc7e911125891a74fc8612292a1a1a194f2a6020881c7f0d581"
+    },
+    {
+      "path": "references/native-acceptance-0.2.2.md",
+      "size_bytes": 5754,
+      "sha256": "7a5cc896dad8e5e1102047d4f89c44c2d662484245d5631d0ff4aff77973ca41"
     },
     {
       "path": "references/usage.md",
-      "size_bytes": 10262,
-      "sha256": "3de69ecb053da01fd1979e3a41905a10281be5bca47f6447aa40675b23cb2a0d"
+      "size_bytes": 13431,
+      "sha256": "65b668ff2733e98ed5338771ce7ebaa440b1ea2a3be5f1171af6d680020a5159"
     },
     {
       "path": "references/validation.md",
@@ -111,18 +123,18 @@
     },
     {
       "path": "scripts/absorber_cli.py",
-      "size_bytes": 14570,
-      "sha256": "977b5eb2eca9b290c728c17999b8993e1048e4f6b59935b5214abcdfa0ff31f0"
+      "size_bytes": 15948,
+      "sha256": "ee08a4d4890cb81b7a034cef4daf9dec2eaac94f97bf178a2b21c6d33e0dbbb1"
     },
     {
       "path": "scripts/cst_absorber/__init__.py",
-      "size_bytes": 117,
-      "sha256": "74bf9cbbc7636e2f7128c7b75a4aeedc3abac762ce6c9356de6256ffacfb4d2e"
+      "size_bytes": 116,
+      "sha256": "fdd88da2f75c36e48807834d2b83cef1b3917f7d5b62c28a390faea4c79f5b72"
     },
     {
       "path": "scripts/cst_absorber/backend.py",
-      "size_bytes": 26506,
-      "sha256": "dda03042dc45e6b56643fe6377bafc2e3c1c0829a6a1aa5e3c74c7d78107dba9"
+      "size_bytes": 27521,
+      "sha256": "c9c3a8cf78bc821066bcdfe31c707665aeafbf513a036fc110f77857b370692d"
     },
     {
       "path": "scripts/cst_absorber/contracts.py",
@@ -136,8 +148,8 @@
     },
     {
       "path": "scripts/cst_absorber/live_backend.py",
-      "size_bytes": 20040,
-      "sha256": "55b4bc9ffc3b3c3526ab1614304e9d47483d986d317d80a70dd421393f9c4c4d"
+      "size_bytes": 27619,
+      "sha256": "87a7e96afcb3d9e79edc8d365bd23ae9b8a3358a384744ecef63e0fb0f178470"
     },
     {
       "path": "scripts/cst_absorber/materials.py",
@@ -156,18 +168,18 @@
     },
     {
       "path": "scripts/cst_absorber/native_model.py",
-      "size_bytes": 21706,
-      "sha256": "4bc7fff5d112698add833499a49040047bb33e6c0cb7d99cfb302ef6eb5c0ca4"
+      "size_bytes": 24608,
+      "sha256": "ceb5aed659599042f7bdfe01d1bb64d84ade4fa49f98ff66dd8555d3f615f85d"
     },
     {
       "path": "scripts/cst_absorber/native_results.py",
-      "size_bytes": 46771,
-      "sha256": "a86a0ccebeac9223e2fb555bb3b9703d61d791e8c342a933c287260386182f6c"
+      "size_bytes": 55543,
+      "sha256": "117ff5394b33d050a742af73a7ee161240d78c86b2f4910df9ca438c13dbf7eb"
     },
     {
       "path": "scripts/cst_absorber/native_sdk.py",
-      "size_bytes": 26132,
-      "sha256": "02df4323a2571897df6eaa3e90d8bcaa8d215ee5e9c9c136fb61112281943deb"
+      "size_bytes": 46794,
+      "sha256": "33b6b9eee591fd3fb5c7e1ea829165dda4ed89535e8540ac92723917cff82641"
     },
     {
       "path": "scripts/cst_absorber/plotting.py",
@@ -176,23 +188,18 @@
     },
     {
       "path": "scripts/cst_absorber/runtime.py",
-      "size_bytes": 39019,
-      "sha256": "71ffc822ff10fe4750088c0796e503da352472a3162212ef714c052cb855f16b"
-    },
-    {
-      "path": "SKILL.md",
-      "size_bytes": 4705,
-      "sha256": "4ad2e054139a92ed4f32e97f40b2e20b18e58d645c639b99752a4bd13d3ff63b"
+      "size_bytes": 53196,
+      "sha256": "51082c47d809fa59ed11ee38ed16e5b174e04f88cbf0914b65d8734b4b2bccfd"
     },
     {
       "path": "tests/test_backend.py",
-      "size_bytes": 18991,
-      "sha256": "0b81e4481c856240499ce76e53d4032a2047e928a3cfe1b014119fab58a7f1bc"
+      "size_bytes": 20209,
+      "sha256": "8823b578f1092d722b67f0ebb7dd686eca8cbfaf8f283720d0801daeb9181516"
     },
     {
       "path": "tests/test_cli.py",
-      "size_bytes": 27605,
-      "sha256": "f614743c4fd3bb13cdee0e42dfa1fbde6f0b550a3107cf604177b2a09deaacd6"
+      "size_bytes": 31265,
+      "sha256": "5966841670dcdc241bf0773cdf377e7fb1c0b61be1d44be831cea66be571b9d5"
     },
     {
       "path": "tests/test_contracts.py",
@@ -206,8 +213,8 @@
     },
     {
       "path": "tests/test_live_backend.py",
-      "size_bytes": 16672,
-      "sha256": "af76346fc419ff12a8db2bde8a4f5f4830669efae0c5f3f7332b95995910b16f"
+      "size_bytes": 23544,
+      "sha256": "6227bccc95bbe6b0206831c6688d8ca63c0070a997935e113bd0a5640882176b"
     },
     {
       "path": "tests/test_materials.py",
@@ -226,18 +233,23 @@
     },
     {
       "path": "tests/test_native_model.py",
-      "size_bytes": 20629,
-      "sha256": "023c947dbb31dc6398eb2ac02b3ce3cbd05fb09ffdd3238bb38244b7a4444637"
+      "size_bytes": 24699,
+      "sha256": "15e1b3f0e998156ca73cfe9a63c13e6224d2e9960226041bfc9887dd55d0ce2a"
     },
     {
       "path": "tests/test_native_results.py",
-      "size_bytes": 52063,
-      "sha256": "a927a8c43345fc6e84cea5b23b5ae1bab187120b12764af7e39768dd4a5463a8"
+      "size_bytes": 67107,
+      "sha256": "9d500ce4ce4edb901beb76a35d549a2afc391981c5d4473055a28cd686c35df7"
     },
     {
       "path": "tests/test_native_sdk.py",
       "size_bytes": 32387,
       "sha256": "9f993af5816fd1e4d50efbffea2cdc23191cc1eb86627ea4ff9e1ad9ff887681"
+    },
+    {
+      "path": "tests/test_native_sdk_archive.py",
+      "size_bytes": 36332,
+      "sha256": "ee8dd74af9e9d11107cc233e2f72f45830033280f0774897d521382e2292f885"
     },
     {
       "path": "tests/test_plotting.py",
@@ -246,8 +258,13 @@
     },
     {
       "path": "tests/test_runtime.py",
-      "size_bytes": 43140,
-      "sha256": "6a0f392875decd1e3eb18dbef1dac8a0df6a1dbcd22b63afbfefa6516e60b184"
+      "size_bytes": 67362,
+      "sha256": "78946f4686fe805b118b862e7a2322f7a83c27fee9c1c3d0aa5d53993e086c79"
+    },
+    {
+      "path": "tests/test_supervision_facade.py",
+      "size_bytes": 1778,
+      "sha256": "de572adbc0b94989f36c93bc73aa1fb11080f92b9ea60c201dcab033a45206a7"
     }
   ]
 }

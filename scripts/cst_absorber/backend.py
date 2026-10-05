@@ -14,7 +14,7 @@ import re
 
 
 _BLOCKERS = {
-    'material_fit_readback': 'Native fitted epsilon/mu and fitting errors have not been read back.',
+    'material_fit_readback': 'Repaired-version material acceptance and solver linkage are unresolved; the prior synthetic Fit deviated.',
     'native_geometry_readback': 'Imported shapes, materials, volumes and bounds have not been verified in CST.',
     'cell_domain_origin_readback': 'The native calculation-domain origin and explicit lattice have not been read back.',
     'reference_plane_readback': 'The native Zmax deembedding plane and complex phase have not been verified.',
@@ -22,7 +22,7 @@ _BLOCKERS = {
     'gamma_units': 'Actual Floquet Gamma labels, units and propagation convention have not been verified.',
     'floquet_power_normalization': 'The native complex Floquet S export has not been verified as power-normalized.',
     'independent_power_closure': 'Actual stimulated, outgoing, accepted and material loss curves have not been reconciled.',
-    'owned_session_lifecycle': 'Fresh-session creation, bounded solving and verified closure have not been exercised.',
+    'owned_session_lifecycle': 'Prior automated native lifecycle failed; the repaired lifecycle has not been rerun in CST.',
 }
 
 
@@ -352,8 +352,15 @@ def prepare_cst(case: dict, out_dir: Path) -> dict:
                             for r in case['geometry']['regions']]}
     acceptance = {'status': 'not_run', 'backend': 'experimental', 'live_supported': False,
                   'required_acceptance': dict(_BLOCKERS), 'incident_power_assumption': None,
-                  'gamma_export_unit': None, 'material_model': 'native_nth_order_fit_candidate',
+                  'gamma_export_unit': None, 'material_model': 'native_frequency_table_and_nth_order_fit_candidate',
                   'material_fit_exact_table_interpolation': False,
+                  'material_solver_policy': {'requested_TDCompatibleMaterials': False,
+                      'documented_table_treatment': 'linear_interpolation_when_TD_fit_disabled',
+                      'native_setting_readback': 'unavailable_public_getter',
+                      'solver_response_linkage': 'unverified'},
+                  'material_response_source_roles': {'Data list': 'original_table',
+                      'FD - Interpolated': 'fd_interpolated_response',
+                      'Fit': 'nth_order_fit_response', 'roles_interchangeable': False},
                   'fit_input_point_count': len(frequencies),
                   'single_point_fit_requires_explicit_native_acceptance': len(frequencies) == 1,
                   'must_retain': ['native material curves and fit errors', 'native region map and bounds',
@@ -423,6 +430,14 @@ class CstBackend:
 
     def cleanup_identity(self, recorded):
         return self._delegate.cleanup_identity(recorded)
+
+    def supervision_status(self):
+        """Expose the exact worker's conservative owned-session exit state."""
+        return self._delegate.supervision_status()
+
+    def supervise_cleanup(self, *, timeout_seconds=10.0):
+        """Forward a seconds-bounded cleanup without changing its evidence."""
+        return self._delegate.supervise_cleanup(timeout_seconds=timeout_seconds)
 
     def __call__(self, case: dict, run_dir: Path, stop_event=None) -> dict:
         return self._delegate(case, run_dir, stop_event)

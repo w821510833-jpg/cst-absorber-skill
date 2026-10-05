@@ -1,7 +1,9 @@
 # CST native acceptance for the executable preview
 
-The native backend is an **implemented experimental execution chain**; its real
-acceptance remains `not_run`. Preparation is offline. Explicit authorization,
+The native backend is an **implemented experimental execution chain**. One
+synthetic 0.2.1 case solved, but automatic end-to-end acceptance **failed**.
+0.2.2 repairs are offline tested and have not been executed in CST; see
+[sanitized findings](native-acceptance-0.2.2.md). Preparation is offline. Explicit authorization,
 exclusive resources and acceptance-run/result-profile admission enable a later
 native invocation. Development tests used injected interfaces only; they do not
 establish CST build compatibility, material fitting or numerical qualification.
@@ -32,14 +34,23 @@ adapter leaves vendor timeouts at their defaults and bounds its caller in second
 with a daemon thread. A timed-out request may continue; another mutation is
 blocked while it is pending. Verified closure requires original process absence
 or observed PID reuse; access denial/unknown retains an unconfirmed state/lock.
-Path and file-identity checks reject aliases/replacements, but the pathname SDK
-has no handle-based atomic save guarantee. Use private owned run directories.
+Held-session controls and archive integrity have distinct guards. Stable inode
+and SHA256 checks quarantine unaccepted archive changes before content writes
+and export, while exact owned polling/abort/without-saving closure remain
+available. Linked or changed run/project paths, wrong held objects and unknown
+identity still block unsafe control. Explicit synchronous save is a checked
+writer trust boundary; asynchronous solver replacement never silently repins.
+The pathname SDK retains a TOCTOU boundary and lacks handle-based atomic-save
+writer attribution. A quarantined archive blocks automatic final save/export.
+Use private owned run directories. Native CLI supervision retains late worker,
+cleanup and SDK obligations; API callers must explicitly use RunSupervisor.
 
 ## Preparation artifacts
 
 - `setup.vba`, `materials.vba`, `geometry.vba`: portable original commands with `@@ARTIFACT_ROOT@@` placeholders. The implemented adapter binds the owned path and escapes VBA strings before submission. Native acceptance remains separate.
 - `assets/region_*.stl`: only user-designated region meshes, transformed into mm. Source asset hashes and transformed volumes are checked against the prepared geometry audit. No STL, mesh, or material is taken from an existing CST session.
-- `geometry_readback.vba`, `mode_readback.vba`: candidate readback commands. They have not been executed; a watertight input STL is insufficient to establish its native shape count, topology, volume or material assignment.
+- `geometry_readback.vba`, `mode_readback.vba`: candidate readback commands. The prior synthetic brick exercised model readback; the expanded mesh getters
+and other geometry paths remain unaccepted. A watertight input STL is insufficient to establish its native shape count, topology, volume or material assignment.
 - `expected_geometry.json`, `expected_modes.json`, `expected_materials.csv`: expected input properties. They are not measured solver results. The expected rectangular cell is independent of the sparse sample bounding box. Native calculation-domain placement still requires readback.
 - `acceptance_requirements.json`, `preparation.json`: unresolved gates, explicit `not_run` status and artifact hashes. Empty `spectra_export.schema.csv` and `power_export.schema.csv` contain headers only; they are native-output schemas, not synthetic simulated data.
 
@@ -47,7 +58,20 @@ has no handle-based atomic save guarantee. Use private owned run directories.
 
 Prepared canonical samples use exp(+j omega t), with epsilon=epsilon'-j epsilon'' and mu=mu'-j mu''. Native table commands receive **positive loss columns** epsilon'' and mu''. The configuration sampler folds electrical conductivity into epsilon once when the original table excludes it; the native candidate sets Sigma to zero. Original conductivity and the native zero value remain in the expected-material table. Tables already containing conductivity are not given another conductivity contribution.
 
-The native candidate uses the documented general Nth-order fitting interface. This is an approximation and is distinct from the core's piecewise-linear material sampling. Native fitted curves must be exported and compared with the supplied canonical values over all requested frequencies, with a declared error tolerance and coverage policy. A one-point fitting input does not establish a valid dispersive model and needs separate native acceptance. No causality or fit accuracy is claimed by offline preparation. Density is written through Rho in kg/m3 when supplied; missing density is left explicit rather than invented.
+The native candidate uses the documented general Nth-order fitting interface.
+It also requests FDSolver.TDCompatibleMaterials=False: the installed frequency
+solver help documents linear interpolation of tabulated properties with TD
+fitting disabled. Data list, FD - Interpolated and Fit are distinct actual
+material source roles; a title containing Fit does not establish leaf role.
+Requested settings and matching FD curves do not establish actual solver
+linkage or native Sigma; those gates remain unresolved. Nth-order Fit is an
+approximation distinct from FD table interpolation and from the core's
+piecewise-linear sampling. Native fitted curves must be exported and compared
+with canonical values at existing exact requested frequencies, under declared
+error tolerances and coverage policy. A one-point fitting input does not establish
+a valid dispersive model and needs separate native acceptance. No causality or
+fit accuracy is claimed by offline preparation. Density is written through Rho
+in kg/m3 when supplied; missing density is explicit rather than invented.
 
 ## Gates before any live success
 
@@ -58,7 +82,7 @@ The native candidate uses the documented general Nth-order fitting interface. Th
    expected axis extent, so translating a thin region cannot enlarge its allowed
    size error. This is a conservative input/readback consistency policy; it does
    not establish CST CAD precision, mesher capability or a supported minimum scale.
-3. Verify maximum-edge controls and readback. The executor applies tetrahedral size controls from actual domain dimensions, per-shape step width and independent solver/mesher CPU settings. It checks reported mesher threads against the immutable runtime snapshot. `GetMaximumEdgeLength` is retained under an explicit project-unit assumption; its units/freshness and a strict size guarantee remain unresolved.
+3. Verify maximum-edge controls and readback. The executor applies tetrahedral size controls from actual domain dimensions, per-shape step width and independent solver/mesher CPU settings. It checks the configured mesher process count against the immutable runtime snapshot. Actual mesher enforcement and solver CPU enforcement remain unverified. `GetMaximumEdgeLength` is retained under an explicit project-unit assumption; its units/freshness and a strict size guarantee remain unresolved.
 4. Verify the reference plane and phase. `reference_plane_m` is an air offset above `geometry.cell.height_m`: zref=height+reference_plane_m, zport=height+air_height_m. The Zmax deembedding distance is reference_plane_m-air_height_m, nonpositive for a plane within that air region. Retain native readback of the resulting plane and complex phase.
 5. Export the fitted epsilon/mu response and fitting error; compare with input values. Do not substitute the input table for a native fitted response. Check measured and authorized extrapolated domains separately.
 6. Read actual mode names/indexes and the saved native result tree. Confirm that every required physical mode exists at every solved point and that all planned frequencies were actually solved. A preview evaluated at one sorting frequency cannot certify whole-band mode propagation.
@@ -145,11 +169,18 @@ Where the saved unpacked project remains available, an authorized read-only
 `export_raw_results` call can re-export that project with the current reader;
 no new solve is required. Adding validity flags by hand is not a verification.
 
-Optional per-material epsilon/mu selectors must identify fitted responses,
-declare the source time convention and tolerances, and cover the actual requested
-frequencies. A matching profile produces `profile_declared_fit_matches_samples`,
-not a native fit acceptance marker. The source role/normalization declarations
-still require native verification. Missing fit mapping stays unresolved.
+Optional material mappings distinguish `fitted_response`/`nth_order_fit` from
+`fd_interpolated_response`/`fd_interpolated`. Native `real_positive_loss`
+components require exact leaf/run/axis identity, `exp(+jωt)`, an explicit zero
+native Sigma declaration and matching real/loss grids. The declaration does not
+verify actual native Sigma. Dense curves use `exact_planned_subset` only;
+missing requested frequencies fail with `material_sample_coverage`, while
+observed-point errors are retained. Fit matches produce
+`profile_declared_fit_matches_samples`; FD matches produce
+`profile_declared_fd_interpolation_matches_samples`. Both remain diagnostic.
+An FD match does not close `material_fit_readback`,
+`material_solver_response_linkage` or `material_conductivity_readback`.
+The source role/normalization declarations still require native verification.
 Current reference-plane and mesh unit/freshness gates keep even mapped runs
 validation-pending. `--acceptance-run` always returns failed/pending while
 retaining actual evidence; it is not a physical-success cache entry.
@@ -164,11 +195,13 @@ The following are relative paths within the installed **public CST 2025 Online H
 | Saved-project result tree, complex data, labels | `Python/source/cst.results.html` |
 | Material Epsilon, Mu, Sigma, Rho and numeric dielectric/magnetic fitting | `mergedProjects/VBA_3D/special_vbalayer/special_vbalayerolayer_object.htm` (page title: Material Object) |
 | Engineering loss sign and conductivity loss | `mergedProjects/3D/special_overview/special_overview_material_overview_hf.htm` |
+| Frequency-domain table interpolation with Fit as in Time Domain disabled | `mergedProjects/3D/special_solvopt/special_solvopt_w3d_specials.htm` (Materials frame) |
 | Brick and explicit STL unit import | `mergedProjects/VBA_3D/common_vbabasicsolids/common_vbabrick_object.htm`; `mergedProjects/VBA_3D/common_vbaimpexp/common_vbaie_stl.htm` |
 | Region material assignment and solid queries | `mergedProjects/VBA_3D/common_vbasolido/common_vbasolido_solid_object.htm` |
 | Explicit lattice and scan-angle conventions | `mergedProjects/VBA_3D/special_vbasolver/special_vbasolver_boundary_object.htm` |
 | Background padding and component creation | `mergedProjects/VBA_3D/special_vbasolver/special_vbasolver_background_object.htm`; `mergedProjects/VBA_3D/special_vbalayer/special_vbalayerocomponent_object.htm` |
-| Floquet modes and reference-plane distance | `mergedProjects/VBA_3D/special_vbaports/floquetport_object.htm` |
+| Floquet modes and reference-plane distance setter | `mergedProjects/VBA_3D/special_vbaports/floquetport_object.htm` |
+| Mesh type/count/edge and configured mesher controls | `mergedProjects/VBA_3D/special_vbamesh/special_vbamesho.htm` |
 | Single frequency samples and native power-loss calculation | `mergedProjects/VBA_3D/special_vbasolver/special_vbasolver_fdsolver_object.htm` |
 | Global solver frequency range | `mergedProjects/VBA_3D/special_vbasolver/special_vbasolver_solver_object.htm` |
 | Gamma definition; time-averaged power meaning | `mergedProjects/3D/special_postpr/special_postpr_pp_modeplot.htm`; `mergedProjects/3D/special_postpr/special_postpr_power_view.htm` |

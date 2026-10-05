@@ -882,6 +882,231 @@ class CanonicalResultsTests(ResultsTestBase):
             self.assert_identity_failure(result, selected_field)
             self.assertIn('s_matrix_incident_column', result['unresolved_gates'])
 
+    def split_material_fixture(self, source_role='fd_interpolated'):
+        raw, profile, case, model = self.fixture()
+        suffix = 'FD - Interpolated' if source_role == 'fd_interpolated' else 'Fit'
+        for entry in profile['materials']:
+            entry.update(role='fd_interpolated_response' if source_role == 'fd_interpolated' else 'fitted_response',
+                         source_role=source_role, native_material_name='mat_' + entry['material_id'],
+                         conductivity_treatment='included_in_epsilon', native_conductivity_S_m=0)
+            case['material_samples'][entry['material_id']]['conductivity_S_m'] = 0
+            for component, native in [('epsilon', 'Eps'), ('mu', 'Mu')]:
+                original = next(c for c in raw['curves'] if c['treepath'] == entry[component]['treepath'])
+                raw['curves'].remove(original)
+                selectors = {}
+                for field, prime in [('real', "'"), ('loss', "''")]:
+                    curve = copy.deepcopy(original)
+                    path = '\\'.join(('1D Results', 'Materials', entry['native_material_name'], 'Dispersive', native + prime + ' (' + suffix + ')'))
+                    curve.update(treepath=path, reported_treepath=path,
+                                 title=('Electric' if component == 'epsilon' else 'Magnetic') + ' Dispersion: Nth Order Model, N=1 (Fit)',
+                                 ylabel='', y=[value['real'] if field == 'real' else -value['imag'] for value in original['y']])
+                    raw['curves'].append(curve)
+                    selectors[field] = {**{key: curve[key] for key in ('treepath', 'run_id', 'title', 'xlabel', 'ylabel')},
+                                        'x_unit': 'GHz', 'x_to_Hz': 1e9, 'y_unit': '1', 'y_scale': 1}
+                entry[component] = {'representation': 'real_positive_loss', 'sample_policy': 'exact_planned_subset', **selectors}
+        return raw, profile, case, model
+
+    def test_split_fd_interpolation_keeps_its_role_and_does_not_accept_native_fit(self):
+        result = self.convert(*self.split_material_fixture())
+        self.assertEqual(result['status'], 'diagnostic_only')
+        report = result['material_fit_readback']
+        self.assertEqual(report['status'], 'profile_declared_fd_interpolation_matches_samples')
+        self.assertEqual(report['native_acceptance'], 'pending')
+        self.assertIn('material_fit_readback', result['unresolved_gates'])
+        self.assertIn('material_solver_response_linkage', result['unresolved_gates'])
+        point = report['materials'][0]['components']['epsilon']['points'][0]
+        self.assertEqual(point['actual_imag'], -0.1)
+        self.assertEqual(report['materials'][0]['source_role'], 'fd_interpolated')
+        self.assertFalse(result['physical_accepted'])
+
+    def test_split_fit_selects_only_exact_planned_points_from_matching_dense_grid(self):
+        raw, profile, case, model = self.split_material_fixture('nth_order_fit')
+        for entry in profile['materials']:
+            for component in ('epsilon', 'mu'):
+                for field in ('real', 'loss'):
+                    selector = entry[component][field]
+                    curve = next(c for c in raw['curves'] if c['treepath'] == selector['treepath'])
+                    curve['x'] = [1, 1.25, 1.75, 2]
+                    curve['y'] = [curve['y'][0], 100, 100, curve['y'][-1]]
+                    curve['point_count'] = 4
+        result = self.convert(raw, profile, case, model)
+        self.assertEqual(result['status'], 'diagnostic_only')
+        report = result['material_fit_readback']['materials'][0]['components']['epsilon']
+        self.assertEqual(report['actual_frequencies_Hz'], [1e9, 1.25e9, 1.75e9, 2e9])
+        self.assertEqual([p['frequency_Hz'] for p in report['points']], [1e9, 2e9])
+        self.assertIn('material_solver_response_linkage', result['unresolved_gates'])
+
+    def test_missing_exact_material_sample_stays_unresolved_without_interpolation(self):
+        raw, profile, case, model = self.split_material_fixture('nth_order_fit')
+        for entry in profile['materials']:
+            for component in ('epsilon', 'mu'):
+                for field in ('real', 'loss'):
+                    selector = entry[component][field]
+                    curve = next(c for c in raw['curves'] if c['treepath'] == selector['treepath'])
+                    curve['x'] = [1, 1.49, 2]
+                    curve['y'] = [curve['y'][0], 100, curve['y'][-1]]
+                    curve['point_count'] = 3
+            sample = case['material_samples'][entry['material_id']]
+            sample['frequencies_Hz'] = [1e9, 1.5e9, 2e9]
+            for key in ('epsilon_real', 'epsilon_imag', 'mu_real', 'mu_imag'):
+                sample[key] = [sample[key][0], 100, sample[key][-1]]
+        case['scenario']['frequencies_Hz'] = [1e9, 1.5e9, 2e9]
+        # Keep independent scattering/power quantities complete on the new plan.
+        for curve in raw['curves']:
+            if not curve['treepath'].startswith('1D Results\\Materials\\'):
+                curve['x'] = [1, 1.5, 2]
+                curve['y'].insert(1, copy.deepcopy(curve['y'][0]))
+                curve['point_count'] = 3
+        result = self.convert(raw, profile, case, model)
+        self.assertEqual(result['status'], 'failed')
+        self.assertIn('material_sample_coverage', result['unresolved_gates'])
+        report = result['material_fit_readback']['materials'][0]
+        self.assertFalse(report['comparison_complete'])
+        self.assertIsNone(report['matched'])
+        self.assertEqual(report['components']['epsilon']['missing_frequencies_Hz'], [1.5e9])
+        self.assertTrue((self.root / 'canonical' / 'material-fit-readback.json').exists())
+
+    def test_data_list_or_fd_leaf_cannot_be_declared_fit_even_with_fit_title(self):
+        original = self.fixture()
+        for index, suffix in enumerate(('Data list', 'FD - Interpolated')):
+            raw, profile, case, model = copy.deepcopy(original)
+            selector = profile['materials'][0]['epsilon']
+            curve = next(c for c in raw['curves'] if c['treepath'] == selector['treepath'])
+            path = r"1D Results\Materials\mat_a\Dispersive\Eps' (" + suffix + ')'
+            curve['treepath'] = curve['reported_treepath'] = selector['treepath'] = path
+            curve['title'] = selector['title'] = 'Electric Dispersion: Nth Order Model, N=1 (Fit)'
+            result = self.convert(raw, profile, case, model, str(index))
+            self.assertEqual(result['status'], 'failed')
+            self.assertIn('material_source_role_identity', result['unresolved_gates'])
+
+    def test_split_component_source_identity_and_grid_are_exact(self):
+        original = self.split_material_fixture()
+        for index, change in enumerate(('role', 'material', 'component', 'grid', 'complex', 'negative_loss', 'policy', 'convention')):
+            raw, profile, case, model = copy.deepcopy(original)
+            entry = profile['materials'][0]
+            selector = entry['epsilon']['loss']
+            curve = next(c for c in raw['curves'] if c['treepath'] == selector['treepath'])
+            if change in ('role', 'material', 'component'):
+                path = curve['treepath'].replace('FD - Interpolated', 'Fit') if change == 'role' else curve['treepath'].replace('mat_a', 'mat_b') if change == 'material' else curve['treepath'].replace("Eps''", "Mu''")
+                curve['treepath'] = curve['reported_treepath'] = selector['treepath'] = path
+            elif change == 'grid':
+                curve['x'] = [1, 2.0001]
+            elif change == 'complex':
+                curve['y'][0] = {'real': 0.1, 'imag': 0.2}
+            elif change == 'negative_loss':
+                curve['y'][0] = -0.1
+            elif change == 'policy':
+                entry['epsilon']['sample_policy'] = 'linear_interpolate'
+            else:
+                entry['source_time_convention'] = 'exp(-jωt)'
+            result = self.convert(raw, profile, case, model, str(index))
+            self.assertEqual(result['status'], 'failed', change)
+            self.assertIsNone(result['spectra_path'])
+
+    def test_split_material_conductivity_cannot_be_counted_twice(self):
+        original = self.split_material_fixture()
+        for index, location in enumerate(('profile', 'prepared')):
+            raw, profile, case, model = copy.deepcopy(original)
+            if location == 'profile':
+                profile['materials'][0]['native_conductivity_S_m'] = 1
+            else:
+                case['material_samples']['a']['conductivity_S_m'] = 1
+            result = self.convert(raw, profile, case, model, str(index))
+            self.assertEqual(result['status'], 'failed')
+            self.assertIn('conductivity', str(result['errors']).lower())
+
+    def test_unrecognized_legacy_complex_fit_role_remains_declared_only(self):
+        result = self.convert(*self.fixture())
+        self.assertEqual(result['status'], 'diagnostic_only')
+        self.assertIn('material_source_role_identity', result['unresolved_gates'])
+        self.assertIn('material_solver_response_linkage', result['unresolved_gates'])
+
+    def test_split_fit_loss_error_is_preserved_in_a_failed_numeric_report(self):
+        raw, profile, case, model = self.split_material_fixture('nth_order_fit')
+        sample = case['material_samples']['a']
+        sample.update(epsilon_real=[3, 3], epsilon_imag=[-0.2, -0.2])
+        component = profile['materials'][0]['epsilon']
+        for field, values in [('real', [3, 3]), ('loss', [0.124952, 0.247053])]:
+            curve = next(c for c in raw['curves'] if c['treepath'] == component[field]['treepath'])
+            curve['y'] = values
+        result = self.convert(raw, profile, case, model)
+        self.assertEqual(result['status'], 'failed')
+        report = result['material_fit_readback']
+        self.assertEqual(report['status'], 'fit_sample_mismatch')
+        self.assertTrue(report['comparison_complete'])
+        self.assertFalse(report['materials'][0]['matched'])
+        points = report['materials'][0]['components']['epsilon']['points']
+        self.assertAlmostEqual(points[0]['actual_imag'], -0.124952)
+        self.assertAlmostEqual(points[0]['absolute_error'], 0.075048)
+        self.assertFalse(points[1]['within_declared_tolerance'])
+        self.assertTrue((self.root / 'canonical' / 'material-fit-readback.json').exists())
+
+    def native_axis_fixture(self):
+        raw, profile, case, model = self.split_material_fixture()
+        profile['excitation']['s_identity'] = {'field': 'treepath',
+            'template': r'1D Results\S-Parameters\S{receive_port}({receive_mode}),{incident_port}({incident_mode})'}
+        for mode in profile['modes']:
+            selector = mode['reflection']
+            curve = next(c for c in raw['curves'] if c['treepath'] == selector['treepath'])
+            path = r'1D Results\S-Parameters\SZmax(' + str(mode['native_mode_index']) + '),Zmax(7)'
+            curve.update(treepath=path, reported_treepath=path, title='S-Parameters', ylabel='')
+            selector.update(treepath=path, title='S-Parameters', ylabel='', y_unit='1')
+        for selector in [profile['power']['stimulated'], profile['power']['reflected'],
+                         *[entry['selector'] for entry in profile['power']['material_absorbed']]]:
+            curve = next(c for c in raw['curves'] if c['treepath'] == selector['treepath'])
+            selector['ylabel'] = curve['ylabel'] = 'W'
+        return raw, profile, case, model
+
+    def test_actual_native_s_blank_and_literal_power_unit_keep_native_axis_labels(self):
+        result = self.convert(*self.native_axis_fixture())
+        self.assertEqual(result['status'], 'diagnostic_only')
+        sources = result['sources']
+        self.assertTrue(all(s['ylabel'] == '' and s['y_unit'] == '1' for s in sources if s['role'] == 'reflection'))
+        self.assertTrue(all(s['ylabel'] == 'W' for s in sources if s['role'] == 'power'))
+        self.assertFalse(result['physical_accepted'])
+
+    def test_literal_power_unit_is_supported_with_existing_nonblank_s_profile(self):
+        raw, profile, case, model = self.fixture()
+        for selector in [profile['power']['stimulated'], profile['power']['reflected'],
+                         *[entry['selector'] for entry in profile['power']['material_absorbed']]]:
+            curve = next(c for c in raw['curves'] if c['treepath'] == selector['treepath'])
+            selector['ylabel'] = curve['ylabel'] = 'W'
+        result = self.convert(raw, profile, case, model)
+        self.assertEqual(result['status'], 'diagnostic_only')
+
+    def test_blank_axis_requires_actual_native_s_role_and_exact_incident_column(self):
+        original = self.native_axis_fixture()
+        for index, change in enumerate(('wrong_role', 'adaptive', 'incident', 'receiving')):
+            raw, profile, case, model = copy.deepcopy(original)
+            selector = profile['modes'][0]['reflection']
+            curve = next(c for c in raw['curves'] if c['treepath'] == selector['treepath'])
+            if change in ('wrong_role', 'adaptive'):
+                # Joining avoids turning a path separator into a string terminator.
+                prefix = '\\'.join(('1D Results', 'Power' if change == 'wrong_role' else 'Adaptive Meshing', 'f=2', 'S-Parameters')) + '\\'
+                profile['excitation']['s_identity']['template'] = prefix + 'S{receive_port}({receive_mode}),{incident_port}({incident_mode})'
+                for mode in profile['modes']:
+                    selected = mode['reflection']
+                    actual = next(c for c in raw['curves'] if c['treepath'] == selected['treepath'])
+                    path = prefix + 'SZmax(' + str(mode['native_mode_index']) + '),Zmax(7)'
+                    actual['treepath'] = actual['reported_treepath'] = selected['treepath'] = path
+            else:
+                path = curve['treepath'].replace(',Zmax(7)', ',Zmax(9)') if change == 'incident' else curve['treepath'].replace('SZmax(7)', 'SZmax(9)')
+                curve['treepath'] = curve['reported_treepath'] = selector['treepath'] = path
+            result = self.convert(raw, profile, case, model, str(index))
+            self.assertEqual(result['status'], 'failed', change)
+            self.assertIsNone(result['spectra_path'])
+
+    def test_bare_power_units_must_match_literal_unit_without_ambiguous_whitespace(self):
+        original = self.native_axis_fixture()
+        for index, label in enumerate((' W', 'W ', 'mW', 'Power W', '', 'dimensionless / 1')):
+            raw, profile, case, model = copy.deepcopy(original)
+            selector = profile['power']['stimulated']
+            curve = next(c for c in raw['curves'] if c['treepath'] == selector['treepath'])
+            curve['ylabel'] = selector['ylabel'] = label
+            result = self.convert(raw, profile, case, model, str(index))
+            self.assertEqual(result['status'], 'failed', repr(label))
+            self.assertIsNone(result['power_path'])
+
 
 if __name__ == '__main__':
     unittest.main()

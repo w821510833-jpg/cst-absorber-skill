@@ -56,6 +56,21 @@ class SessionFixture:
         self.action('save'); self.project_path.write_bytes(b'FAKE_INTERFACE_FIXTURE_NOT_CST')
     def add_to_history(self, header, code, timeout_seconds=1): self.action('history:'+header)
     def execute_vba(self, code, timeout_seconds=1): self.action('vba:'+code)
+    def execute_readback(self, *, kind, timeout_seconds=1):
+        self.action('readback:'+kind)
+        if kind != 'mesh': raise ValueError('unsupported documented readback')
+        self.action('vba:READ_MESH')
+    def archive_integrity(self):
+        pinned = self.fail_stage != 'archive'
+        return {'status':'pinned' if pinned else 'quarantined', 'archive_integrity_verified':pinned}
+    def verify_archive(self, timeout_seconds=1):
+        self.action('archive_check')
+        if self.fail_stage == 'archive': raise ValueError('archive quarantined')
+        return self.archive_integrity()
+    def supervision_status(self):
+        return {'request_pending':False,'session_creation_pending':False,
+                'session_created':True,'owned_closed':'close' in self.calls and self.closed}
+    def supervise_cleanup(self, timeout_seconds=1): return self.close(timeout_seconds)
     def start_solver(self, timeout_seconds=1):
         self.action('start')
         if self.stop_on_start: self.stop_on_start.set()
@@ -259,6 +274,107 @@ class LiveBackendTests(unittest.TestCase):
         receipt=worker(self.case,self.attempt,event)
         self.assertFalse(self.created);self.assertEqual(receipt['CST_execution'],'not_run')
         self.assertTrue(receipt['owned_closed'])
+
+    def test_documented_readback_uses_control_query_and_archive_quarantine_blocks_export(self):
+        worker,session,_=self.make(session_options={'fail_stage':'archive'})
+        receipt=worker(self.case,self.attempt,threading.Event())
+        self.assertIn('readback:mesh',session.calls)
+        self.assertIn('archive_check',session.calls)
+        self.assertIn('archive_integrity',receipt['unresolved_gates'])
+        self.assertEqual(receipt['reason_code'],'native_archive_integrity_failed')
+        self.assertTrue(receipt['owned_closed'])
+        self.assertNotIn('export_raw',session.calls)
+        self.assertEqual(session.calls.count('save'),2)
+        self.assertEqual(receipt['archive_integrity']['status'],'quarantined')
+
+    def test_adapter_empty_gates_cannot_claim_mesh_cpu_or_reference_acceptance(self):
+        worker,session,result=self.make(model=ModelFixture(gates=[]),result_profile={'fixture':True})
+        worker.acceptance_run=False
+        result.gates=[]
+        receipt=worker(self.case,self.attempt,threading.Event())
+        self.assertEqual(receipt['status'],'failed')
+        for gate in ('reference_plane_readback','material_fit_readback','solver_cpu_enforcement',
+                     'mesher_thread_enforcement','mesh_edge_unit','mesh_edge_freshness'):
+            self.assertIn(gate,receipt['unresolved_gates'])
+
+    def test_archive_quarantine_is_retained_even_when_a_prior_model_stage_failed(self):
+        worker,session,_=self.make(model=ModelFixture(fail_model=True),session_options={'fail_stage':'archive'})
+        receipt=worker(self.case,self.attempt,threading.Event())
+        self.assertEqual(receipt['archive_integrity']['status'],'quarantined')
+        self.assertIn('archive_integrity',receipt['unresolved_gates'])
+        self.assertEqual(receipt['reason_code'],'native_archive_integrity_failed')
+        self.assertTrue(receipt['owned_closed'])
+        self.assertNotIn('archive_check',session.calls)
+        self.assertNotIn('start',session.calls)
+
+    def test_supervision_forwards_closed_session_without_upgrading_failed_receipt(self):
+        worker,session,_=self.make()
+        receipt=worker(self.case,self.attempt,threading.Event())
+        original=copy.deepcopy(worker.last_receipt)
+        status=worker.supervision_status()
+        self.assertFalse(status['request_pending'])
+        self.assertFalse(status['session_creation_pending'])
+        self.assertTrue(status['session_created'])
+        self.assertFalse(status['worker_pending'])
+        self.assertTrue(worker.supervise_cleanup(timeout_seconds=.1)['owned_closed'])
+        self.assertEqual(worker.last_receipt,original)
+        self.assertEqual(receipt['status'],'failed')
+
+    def test_unknown_creation_is_never_reported_as_no_owned_session(self):
+        def bad_factory(*args,**kwargs): raise TimeoutError('creation reply unknown')
+        worker=ExecutableCstBackend(authorized=True,exclusive_resources=True,acceptance_run=True,
+                                     session_factory=bad_factory,model_adapter=ModelFixture())
+        worker(self.case,self.attempt,threading.Event())
+        status=worker.supervision_status()
+        self.assertEqual(status['session_created'],'unknown')
+        self.assertTrue(status['session_creation_pending'])
+        self.assertFalse(status['owned_closed'])
+        self.assertFalse(worker.supervise_cleanup(timeout_seconds=.1)['owned_closed'])
+
+    def test_supervision_never_closes_while_worker_is_in_creation(self):
+        entered=threading.Event();release=threading.Event()
+        worker,session,_=self.make()
+        original=worker.session_factory
+        def factory(*args,**kwargs):
+            entered.set();release.wait(1)
+            return original(*args,**kwargs)
+        worker.session_factory=factory
+        thread=threading.Thread(target=worker,args=(self.case,self.attempt,threading.Event()))
+        thread.start()
+        self.addCleanup(lambda:(release.set(),thread.join(2)))
+        self.assertTrue(entered.wait(1))
+        status=worker.supervision_status()
+        self.assertTrue(status['worker_pending'])
+        self.assertTrue(status['session_creation_pending'])
+        self.assertEqual(status['session_created'],'unknown')
+        self.assertFalse(worker.supervise_cleanup(timeout_seconds=.1)['owned_closed'])
+        self.assertNotIn('close',session.calls)
+        release.set();thread.join(2)
+
+    def test_unknown_transport_never_claims_native_solver_execution(self):
+        worker,session,_=self.make()
+        session.evidence_kind='unknown_transport'
+        receipt=worker(self.case,self.attempt,threading.Event())
+        self.assertIn('start',session.calls)
+        self.assertEqual(receipt['backend_evidence'],'unknown_transport')
+        self.assertEqual(receipt['CST_execution'],'not_run_unverified_transport')
+        stored=json.loads((self.attempt/'native-run.json').read_text(encoding='utf-8'))
+        self.assertEqual(stored['CST_execution'],'not_run_unverified_transport')
+        self.assertEqual(receipt['status'],'failed')
+        self.assertFalse(receipt['numerically_qualified'])
+
+    def test_fake_sdk_mapping_is_diagnostic_without_native_or_injected_origin_claim(self):
+        worker,session,_=self.make(result_profile={'fixture':True})
+        session.evidence_kind='fake_sdk'
+        receipt=worker(self.case,self.attempt,threading.Event())
+        self.assertEqual(receipt['backend_evidence'],'fake_sdk')
+        self.assertEqual(receipt['CST_execution'],'not_run_unverified_transport')
+        metrics=json.loads((self.attempt/'analysis/metrics.json').read_text(encoding='utf-8'))
+        self.assertEqual(metrics['CST_execution'],'not_run_unverified_transport')
+        self.assertEqual(metrics['provenance']['export_origin'],'unverified_transport_project')
+        self.assertEqual(metrics['solver_evidence'],'fake_sdk')
+        self.assertEqual(metrics['quality_state'],'diagnostic_only')
+        self.assertFalse(metrics['numerically_qualified'])
 
 
 if __name__=='__main__': unittest.main()

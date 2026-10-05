@@ -325,6 +325,22 @@ class BackendTests(unittest.TestCase):
             factory.assert_called_once_with(authorized=True, exclusive_resources=True,
                                            acceptance_run=True)
 
+    def test_preparation_distinguishes_requested_fd_policy_and_fit_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.prepare(prepared_case(), directory)
+            acceptance = json.loads((Path(directory) / 'acceptance_requirements.json').read_text())
+            self.assertIn('material_solver_policy', acceptance,
+                          'requested FD interpolation policy needs its own provenance')
+            policy = acceptance['material_solver_policy']
+            self.assertFalse(policy['requested_TDCompatibleMaterials'])
+            self.assertEqual(policy['documented_table_treatment'], 'linear_interpolation_when_TD_fit_disabled')
+            self.assertEqual(policy['native_setting_readback'], 'unavailable_public_getter')
+            self.assertEqual(policy['solver_response_linkage'], 'unverified')
+            self.assertFalse(acceptance['material_response_source_roles']['roles_interchangeable'])
+            self.assertEqual(acceptance['material_response_source_roles']['FD - Interpolated'],
+                             'fd_interpolated_response')
+            self.assertEqual(acceptance['material_response_source_roles']['Fit'], 'nth_order_fit_response')
+
     def test_prepared_units_use_documented_setunit_interface(self):
         with tempfile.TemporaryDirectory() as directory:
             self.prepare(prepared_case(), directory)

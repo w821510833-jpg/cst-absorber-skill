@@ -17,6 +17,12 @@ _FREQUENCY = {'Hz': 1., 'kHz': 1e3, 'MHz': 1e6, 'GHz': 1e9, 'THz': 1e12, 'PHz': 
 _BOUNDARIES = {'Xmin': 'unit cell', 'Xmax': 'unit cell', 'Ymin': 'unit cell',
                'Ymax': 'unit cell', 'Zmin': 'electric', 'Zmax': 'open'}
 _MAX_REPORT_BYTES = 8 * 1024 * 1024
+_MESH_QUERIES = {'mesh_type': 'Mesh.GetMeshType',
+                 'mesh_cells': 'Mesh.GetNumberOfMeshCells',
+                 'min_edge': 'Mesh.GetMinimumEdgeLength',
+                 'max_edge': 'Mesh.GetMaximumEdgeLength',
+                 'mesher_mode': 'Mesh.GetParallelMesherMode("Tet")',
+                 'mesher_threads': 'Mesh.GetMaxParallelMesherThreads("Tet")'}
 
 
 def _number(value, label, *, positive=False):
@@ -300,7 +306,19 @@ def read_model_report(case, artifact_root):
             'boundaries': boundaries, 'lattice': {'Lx_m': lattice[0] * factor, 'Ly_m': lattice[1] * factor, 'angle_deg': lattice[2]},
             'shape_indices': [{'index': i, 'name': name} for i, name in sorted(shape_indices.items())],
             'shapes': actual_shapes, 'modes': actual_modes, 'modes_port': 'Zmax',
-            'unresolved_gates': ['material_fit_readback', 'reference_plane_readback']}
+            'readback_limitations': {
+                'reference_plane_readback': {
+                    'status': 'unsupported_public_getter', 'port': 'Zmax',
+                    'requested_zref_m': cell['height_m'] + case['scenario']['reference_plane_m'],
+                    'requested_deembedding_distance_m': case['scenario']['reference_plane_m'] - case['scenario']['air_height_m'],
+                    'configured_value_verified': False, 'phase_benchmark_verified': False,
+                    'documentation': 'CST Studio Suite 2025 public VBA FloquetPort object',
+                    'reason': 'SetDistanceToReferencePlane is documented; a corresponding distance getter is not documented.'},
+                'solver_cpu_enforcement': {
+                    'status': 'unsupported_public_getter', 'runtime_enforcement_verified': False,
+                    'documentation': 'CST Studio Suite 2025 public VBA FDSolver object',
+                    'reason': 'MaxCPUs and MaximumNumberOfCPUDevices configure resources; no corresponding CPU getter or actual-use query is documented.'}},
+            'unresolved_gates': ['material_fit_readback', 'reference_plane_readback', 'solver_cpu_enforcement']}
 
 
 def resource_mesh_vba(case, runtime, report):
@@ -334,17 +352,22 @@ def mesh_readback_vba(artifact_root):
              _print('schema', _q('native-mesh-v1')),
              _print('unit', _q('length'), 'Units.GetUnit("Length")'),
              _print('factor', _q('geometry_to_SI'), 'Str$(Units.GetGeometryUnitToSI)'),
+             _print('mesh_type', 'Mesh.GetMeshType'),
+             _print('mesh_cells', 'CStr(Mesh.GetNumberOfMeshCells)'),
+             _print('min_edge', 'Str$(Mesh.GetMinimumEdgeLength)'),
              _print('max_edge', 'Str$(Mesh.GetMaximumEdgeLength)'),
              _print('mesher_mode', 'Mesh.GetParallelMesherMode("Tet")'),
-             _print('mesher_threads', 'CStr(Mesh.GetMaxParallelMesherThreads("Tet"))'),
-             'Close #fh', 'End Sub']
+             _print('mesher_threads', 'CStr(Mesh.GetMaxParallelMesherThreads("Tet"))')]
+    for key, getter in _MESH_QUERIES.items():
+        lines.append(_print('source', _q(key), _q(getter)))
+    lines += ['Close #fh', 'End Sub']
     return bind_artifact_text('\n'.join(lines) + '\n', artifact_root)
 
 
 def read_mesh_report(case, root, model_report):
     """Check edge under an explicit project-unit assumption, never certify that unit."""
     records, raw = _read_records(root, 'native_mesh.tsv', 'native-mesh-v1')
-    values = {}
+    values, sources = {}, {}
     for row in records:
         tag = row[0]
         if tag in ('unit', 'factor'):
@@ -352,24 +375,35 @@ def read_mesh_report(case, root, model_report):
             if (tag, row[1]) not in (('unit', 'length'), ('factor', 'geometry_to_SI')):
                 raise ValueError('unknown native mesh unit/factor record')
             _once(values, tag, row[2])
-        elif tag in ('max_edge', 'mesher_mode', 'mesher_threads'):
+        elif tag in _MESH_QUERIES:
             _check_length(row, 2)
             _once(values, tag, row[1])
+        elif tag == 'source':
+            _check_length(row, 3)
+            _once(sources, row[1], row[2])
         else:
             raise ValueError('unknown native mesh record')
-    if set(values) != {'unit', 'factor', 'max_edge', 'mesher_mode', 'mesher_threads'}:
+    if set(values) != {'unit', 'factor', *_MESH_QUERIES}:
         raise ValueError('native mesh report is incomplete')
+    if sources != _MESH_QUERIES:
+        raise ValueError('native mesh getter provenance is missing or unsupported')
     if values['unit'] != model_report['units']['length']:
         raise ValueError('native mesh project-unit record mismatch')
     factor = _number(values['factor'], 'mesh geometry unit factor', positive=True)
     _close(factor, model_report['units']['geometry_to_SI'], 'mesh unit factor', rel=1e-10, absolute=0)
     if values['mesher_mode'] != 'user-defined':
         raise ValueError('native mesher thread mode mismatch')
+    if values['mesh_type'] != 'Tetrahedral':
+        raise ValueError('native selected mesh type mismatch')
+    mesh_cells = _integer(values['mesh_cells'], 'mesh cell count', positive=True)
     threads = _integer(values['mesher_threads'], 'mesher threads', positive=True)
     expected_threads = case.get('runtime', {}).get('max_cpus')
     if expected_threads is not None and threads != expected_threads:
         raise ValueError('native mesher thread count mismatch')
     raw_edge = _number(values['max_edge'], 'maximum mesh edge', positive=True)
+    min_edge = _number(values['min_edge'], 'minimum mesh edge', positive=True)
+    if min_edge > raw_edge:
+        raise ValueError('native minimum mesh edge exceeds maximum edge')
     converted = _number(raw_edge * factor, 'converted maximum mesh edge', positive=True)
     limit = _number(case['mesh']['max_edge_m'], 'requested maximum mesh edge', positive=True)
     if converted > limit * (1 + 1e-6):
@@ -377,10 +411,17 @@ def read_mesh_report(case, root, model_report):
     return {'schema_version': '1.0', 'status': 'mesh_report_checked_with_unit_assumption',
             'source_file': 'native_mesh.tsv', 'raw_records': raw, 'evidence_kind': 'readback_file',
             'max_edge_raw': raw_edge, 'project_length_unit': values['unit'],
+            'min_edge_raw': min_edge, 'mesh_type': values['mesh_type'], 'mesh_cells': mesh_cells,
+            'query_provenance': {key: {'getter': getter,
+                'documentation': 'CST Studio Suite 2025 public VBA Mesh object',
+                'producer_verified': False} for key, getter in sources.items()},
             'assumed_geometry_to_SI': factor,
             'unit_assumption': 'GetMaximumEdgeLength is assumed to use the project length unit; not established by public API evidence.',
             'max_edge_m_under_assumption': converted, 'requested_max_edge_m': limit,
             'edge_within_limit_under_assumption': True, 'mesh_unit_confirmed': False,
             'strict_mesher_size_guarantee': False, 'mesher_mode': values['mesher_mode'],
-            'mesher_threads': threads, 'native_validation': 'not_established',
-            'numerically_qualified': False, 'unresolved_gates': ['mesh_edge_unit', 'mesh_edge_freshness']}
+            'mesher_threads': threads, 'mesher_threads_evidence': 'configured_process_count',
+            'mesher_thread_enforcement_verified': False, 'solver_cpu_enforcement_verified': False,
+            'native_validation': 'not_established', 'numerically_qualified': False,
+            'unresolved_gates': ['mesh_edge_unit', 'mesh_edge_freshness',
+                                 'mesher_thread_enforcement', 'solver_cpu_enforcement']}

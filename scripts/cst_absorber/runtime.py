@@ -8,6 +8,8 @@ Unconfirmed closure leaves a durable lock and prevents automatic recovery.
 The worker must read its immutable runtime.json and apply max_cpus/max_modes
 to the backend. The 0.2 second closure wait bounds this offline controller's
 confirmation window; it is not a suitable shutdown deadline for every solver.
+Native callers must keep a RunSupervisor alive and wait for verified teardown
+before allowing their interpreter to exit. The CLI does this automatically.
 """
 from __future__ import annotations
 
@@ -332,16 +334,244 @@ def _default_resources(root):
             "free_disk_GiB": shutil.disk_usage(root).free / 1024**3}
 
 
-def _async_call(function, *args):
-    result = {}
+def _async_call(function, *args, on_dispatch=None):
+    completed, entered = threading.Event(), threading.Event()
+    result = {"_completed": completed, "_entered": entered}
     def call():
+        entered.set()
         try:
             result["value"] = function(*args)
         except BaseException as error:
             result["error"] = error
+        finally:
+            completed.set()
     thread = threading.Thread(target=call, daemon=True)
-    thread.start()
+    if on_dispatch is not None:
+        # Bind lifetime before Thread.start: interruption immediately after
+        # dispatch must not lose its stop event or cleanup callback reference.
+        try:
+            on_dispatch(thread, result)
+        except BaseException as error:
+            # Thread.start has not been called, so no launch is possible here.
+            result.update(error=error, _no_launch_proven=True)
+            completed.set()
+            raise
+    try:
+        thread.start()
+    except BaseException as error:
+        # Thread.start can be interrupted after OS thread creation but before
+        # its Python handshake. is_alive()==False cannot prove no launch.
+        # Retain uncertainty until the target's actual finally block completes.
+        result["_start_error"] = error
+        raise
     return thread, result
+
+
+def _dispatch_pending(thread, returned):
+    completed = returned.get("_completed")
+    return not isinstance(completed, threading.Event) or not completed.is_set() or thread.is_alive()
+
+
+def _dispatch_startup_unknown(returned):
+    entered = returned.get("_entered")
+    return ("_start_error" in returned
+            and isinstance(entered, threading.Event) and not entered.is_set())
+
+
+class RunSupervisor:
+    """Retain native lifetime after the controller's bounded work deadline.
+
+    Only injected worker hooks observe or close their owned session. A timeout
+    means uncertainty, never permission to abandon a request or kill a process.
+    ``wait`` therefore remains active until the hooks prove safe teardown; an
+    unknown session may require human intervention. Controller receipts, locks,
+    pause requests and failure budgets are never upgraded by late supervision.
+    """
+    def __init__(self, *, poll_interval_seconds=.2, callback_timeout_seconds=10):
+        for value in (poll_interval_seconds, callback_timeout_seconds):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+                raise RuntimeSafetyError("supervision timing must be positive and finite")
+        self.poll_interval_seconds = float(poll_interval_seconds)
+        self.callback_timeout_seconds = float(callback_timeout_seconds)
+        self.started = False
+        self._finished = False
+        self._workers = []
+        self._cleanups = []
+        self._call = None
+        self._root = None
+        self._worker = None
+        self._approved = False
+        self._backend_status = None
+        self._closure = None
+        self._errors = []
+        self._last_cleanup = -math.inf
+
+    def begin(self, worker, root):
+        if self.started:
+            raise RuntimeSafetyError("a supervisor belongs to exactly one controller invocation")
+        self.started, self._worker, self._root = True, worker, Path(root).resolve()
+
+    def track_worker(self, thread, returned, stop, directory):
+        self._workers.append((thread, returned, stop, Path(directory)))
+
+    def track_cleanup(self, thread, returned):
+        self._cleanups.append((thread, returned))
+
+    def finish_controller(self):
+        self._finished = True
+        if self.pending_actions():
+            self._stop()
+
+    def snapshot(self):
+        workers = sum(_dispatch_pending(thread, returned) for thread, returned, *_ in self._workers)
+        cleanups = sum(_dispatch_pending(thread, returned) for thread, returned in self._cleanups)
+        callback = int(self._call is not None and _dispatch_pending(self._call[1], self._call[2]))
+        unknown = sum(_dispatch_startup_unknown(returned) for _, returned, *_ in self._workers)
+        unknown += sum(_dispatch_startup_unknown(returned) for _, returned in self._cleanups)
+        unknown += int(self._call is not None and _dispatch_startup_unknown(self._call[2]))
+        return {"schema_version": "cst-supervision/1", "status": "closed" if self._approved else "blocked",
+                "exit_ready": self._approved, "controller_pending": not self._finished,
+                "worker_pending": workers, "cleanup_pending": cleanups,
+                "supervision_callback_pending": callback,
+                "startup_outcome_unknown": unknown,
+                "no_dispatch_proven": self.started and self._finished and not self._workers,
+                "owned_closed": self._approved,
+                "backend_status": copy.deepcopy(self._backend_status),
+                "closure": copy.deepcopy(self._closure),
+                "diagnostic_errors": list(self._errors),
+                "physical_certification": False}
+
+    def pending_actions(self):
+        return any(_dispatch_pending(thread, returned) for thread, returned, *_ in self._workers) or self.pending_cleanup()
+
+    def pending_cleanup(self):
+        return any(_dispatch_pending(thread, returned) for thread, returned in self._cleanups)
+
+    def _stop(self):
+        for _, _, stop, _ in self._workers:
+            stop.set()
+
+    def _error(self, error):
+        self._stop()
+        self._errors.append({"type": type(error).__name__, "message": str(error)[:512]})
+        self._errors = self._errors[-16:]
+
+    def _publish(self, snapshot, on_update):
+        # Diagnostics cannot control native lifetime, even if storage is denied
+        # or a user interrupts a print/update callback.
+        try:
+            if self._root is not None:
+                _write(self._root / "supervision.json", snapshot)
+        except BaseException as error:
+            self._error(error)
+        if on_update is not None:
+            try:
+                on_update(copy.deepcopy(snapshot))
+            except BaseException as error:
+                self._error(error)
+        snapshot["diagnostic_errors"] = list(self._errors)
+        return snapshot
+
+    def _invoke(self, kind, function):
+        def record(thread, returned):
+            self._call = (kind, thread, returned,
+                          time.monotonic() + self.callback_timeout_seconds)
+        _async_call(function, on_dispatch=record)
+
+    def wait(self, worker=None, *, on_update=None):
+        """Drain tracked callbacks and separately verify native owned closure.
+
+        This is deliberately a lifetime wait, independent of the case work
+        budget. A hook is never duplicated while its earlier invocation runs.
+        Unknown or false closure keeps a blocked status and the interpreter
+        alive; no empty/missing receipt is interpreted as absence of a session.
+        Workers without the native supervision protocol remain bounded and
+        receive an unconfirmed return instead of a persistent native wait.
+        """
+        backend = worker if worker is not None else self._worker
+        query = getattr(backend, "supervision_status", None)
+        cleanup = getattr(backend, "supervise_cleanup", None)
+        if not self.started:
+            raise RuntimeSafetyError("supervisor has not observed a controller invocation")
+        if backend is not self._worker:
+            raise RuntimeSafetyError("supervisor worker identity changed")
+        if not callable(query) or not callable(cleanup):
+            snapshot = self.snapshot()
+            snapshot.update(reason="native supervision hooks unavailable", requires_user_intervention=True)
+            return self._publish(snapshot, on_update)
+        reason = "waiting for dispatched worker and cleanup callbacks"
+        intervention = False
+        while True:
+            try:
+                snapshot = self.snapshot()
+                if snapshot["controller_pending"] or snapshot["worker_pending"] or snapshot["cleanup_pending"]:
+                    snapshot.update(reason=("dispatch startup outcome remains unknown; lifetime retained"
+                                            if snapshot["startup_outcome_unknown"] else reason),
+                                    requires_user_intervention=bool(snapshot["startup_outcome_unknown"]))
+                    self._publish(snapshot, on_update)
+                    threading.Event().wait(self.poll_interval_seconds)
+                    continue
+                if self._call is None:
+                    self._invoke("status", query)
+                kind, thread, returned, call_deadline = self._call
+                if _dispatch_pending(thread, returned):
+                    snapshot = self.snapshot()
+                    snapshot.update(reason="owned supervision callback remains pending",
+                                    requires_user_intervention=time.monotonic() >= call_deadline)
+                    self._publish(snapshot, on_update)
+                    completed = returned.get("_completed")
+                    if isinstance(completed, threading.Event):
+                        completed.wait(self.poll_interval_seconds)
+                    else:
+                        threading.Event().wait(self.poll_interval_seconds)
+                    continue
+                self._call = None
+                if "error" in returned:
+                    self._error(returned["error"])
+                    reason, intervention = "owned supervision callback failed; closure remains unknown", True
+                elif kind == "cleanup":
+                    value = returned.get("value")
+                    self._closure = copy.deepcopy(value) if isinstance(value, dict) else None
+                    # Requery after every cleanup; a returned true receipt alone
+                    # cannot override a still pending request or contradiction.
+                    reason = "rechecking owned lifetime after supervised cleanup"
+                    intervention = not isinstance(value, dict) or value.get("owned_closed") is not True
+                else:
+                    value = returned.get("value")
+                    valid = (isinstance(value, dict)
+                             and all(type(value.get(key)) is bool for key in
+                                     ("request_pending", "session_creation_pending", "owned_closed"))
+                             and (type(value.get("session_created")) is bool or value.get("session_created") == "unknown")
+                             and ("worker_pending" not in value or type(value["worker_pending"]) is bool))
+                    if not valid:
+                        self._backend_status = None
+                        reason, intervention = "owned supervision evidence is missing or invalid", True
+                    else:
+                        self._backend_status = copy.deepcopy(value)
+                        pending = value["request_pending"] or value["session_creation_pending"] or value.get("worker_pending", False)
+                        if pending:
+                            reason, intervention = "owned startup or SDK request remains pending", False
+                        elif value["owned_closed"] is True and type(value["session_created"]) is bool:
+                            self._approved = True
+                            final = self.snapshot()
+                            final.update(reason="owned lifetime closure verified", requires_user_intervention=False)
+                            return self._publish(final, on_update)
+                        elif value["session_created"] is True or value.get("identity_recorded") is True:
+                            reason, intervention = "owned closure remains unconfirmed", True
+                            if time.monotonic() - self._last_cleanup >= self.callback_timeout_seconds:
+                                self._last_cleanup = time.monotonic()
+                                self._invoke("cleanup", lambda: cleanup(timeout_seconds=self.callback_timeout_seconds))
+                        else:
+                            reason, intervention = "session creation remains unknown; human intervention required", True
+                snapshot = self.snapshot()
+                snapshot.update(reason=reason, requires_user_intervention=intervention)
+                self._publish(snapshot, on_update)
+                threading.Event().wait(self.poll_interval_seconds)
+            except BaseException as error:
+                self._error(error)
+                # Keep the existing request reference; its completion is still
+                # required before any subsequent observation/cleanup dispatch.
+                reason, intervention = "supervision interrupted; owned lifetime still retained", True
 
 
 def _check_assets_bounded(case, deadline):
@@ -492,7 +722,9 @@ def _cache_valid(root, state, cases, inputs_hash, deadline):
     return state
 
 
-def _cleanup(worker, directory, deadline):
+def _cleanup(worker, directory, deadline, supervisor=None):
+    if supervisor is not None and supervisor.pending_cleanup():
+        return False  # An interrupted earlier launch may still enter later.
     ownership = getattr(worker, "ownership", None)
     action = getattr(worker, "cleanup_identity", None)
     if not callable(ownership) or not callable(action):
@@ -500,13 +732,17 @@ def _cleanup(worker, directory, deadline):
     def close():
         session, live = ownership(directory)
         return safe_cleanup(session, live, directory, action)
-    thread, result = _async_call(close)
+    if supervisor is not None:
+        thread, result = _async_call(close, on_dispatch=supervisor.track_cleanup)
+    else:
+        thread, result = _async_call(close)
     thread.join(max(0, deadline - time.monotonic()))
     return not thread.is_alive() and result.get("value") is True
 
 
 def run_cases(plan: dict, output_root: Path, worker: Callable,
-              resource_probe: Callable | None = None, resume: bool = False) -> dict:
+              resource_probe: Callable | None = None, resume: bool = False,
+              supervisor: RunSupervisor | None = None) -> dict:
     """Run exactly the prepared list; completed resumes validate content hashes.
 
     Return status, reason, case records and backend evidence. This orchestration
@@ -521,17 +757,26 @@ def run_cases(plan: dict, output_root: Path, worker: Callable,
     cases, limits, inputs_hash = _validate(plan)
     if not callable(worker):
         raise RuntimeSafetyError("worker must be callable")
+    if supervisor is not None and not isinstance(supervisor, RunSupervisor):
+        raise RuntimeSafetyError("supervisor must be a RunSupervisor")
     root = Path(output_root)
     state = None
     locked = False
     keep_lock = False
     active = None
-    deadline = time.monotonic() + limits["wall_budget_seconds"]
+    final_outcome = None
     def outcome(status, reason=""):
-        return {"status": status, "reason": reason, "cases": state["cases"] if state else [],
-                "backend_evidence": state.get("backend_evidence", "unknown") if state else "unknown",
-                "physical_certification": False}
+        nonlocal final_outcome
+        final_outcome = {"status": status, "reason": reason, "cases": state["cases"] if state else [],
+                         "backend_evidence": state.get("backend_evidence", "unknown") if state else "unknown",
+                         "physical_certification": False}
+        return final_outcome
     try:
+        # Arm finally before recording a started controller. Interruption in
+        # its clock/path setup must not leave controller_pending forever.
+        if supervisor is not None:
+            supervisor.begin(worker, root)
+        deadline = time.monotonic() + limits["wall_budget_seconds"]
         if root.is_symlink():
             raise RuntimeSafetyError("run root symlink is not owned")
         root.mkdir(parents=True, exist_ok=True)
@@ -627,7 +872,12 @@ def run_cases(plan: dict, output_root: Path, worker: Callable,
                 else:
                     attempt["worker_dispatched"] = True
                     _write(state_path, state)
-                    thread, returned = _async_call(worker, copy.deepcopy(case), directory, stop)
+                    if supervisor is not None:
+                        thread, returned = _async_call(worker, copy.deepcopy(case), directory, stop,
+                            on_dispatch=lambda dispatched, result: supervisor.track_worker(
+                                dispatched, result, stop, directory))
+                    else:
+                        thread, returned = _async_call(worker, copy.deepcopy(case), directory, stop)
                     active = (thread, returned, stop, directory)
                     interrupt = None
                 while thread is not None and thread.is_alive():
@@ -648,7 +898,7 @@ def run_cases(plan: dict, output_root: Path, worker: Callable,
                 if interrupt and thread is not None:
                     stop.set()
                     closure_deadline = time.monotonic() + .2
-                    cleanup_closed = _cleanup(worker, directory, closure_deadline)
+                    cleanup_closed = _cleanup(worker, directory, closure_deadline, supervisor)
                     thread.join(max(0, closure_deadline - time.monotonic()))
                 else:
                     cleanup_closed = False
@@ -728,7 +978,7 @@ def run_cases(plan: dict, output_root: Path, worker: Callable,
             active_thread, active_result, active_stop, active_directory = active
             active_stop.set()
             closure_deadline = time.monotonic() + .2
-            confirmed = _cleanup(worker, active_directory, closure_deadline)
+            confirmed = _cleanup(worker, active_directory, closure_deadline, supervisor)
             active_thread.join(max(0, closure_deadline - time.monotonic()))
             active_receipt = active_result.get("value")
             confirmed = confirmed or (isinstance(active_receipt, dict) and active_receipt.get("owned_closed") is True)
@@ -749,5 +999,11 @@ def run_cases(plan: dict, output_root: Path, worker: Callable,
                 keep_lock = True
         return outcome("blocked", reason)
     finally:
+        if supervisor is not None:
+            keep_lock = keep_lock or supervisor.pending_actions()
+            supervisor.finish_controller()
+            if final_outcome is not None:
+                final_outcome["supervision"] = supervisor.snapshot()
+                final_outcome["exit_ready"] = final_outcome["supervision"]["exit_ready"]
         if locked and not keep_lock:
             (root / "controller.lock").unlink(missing_ok=True)

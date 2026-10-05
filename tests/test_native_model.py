@@ -40,7 +40,14 @@ def model_text():
 def mesh_text(edge='.4', threads='2'):
     return '\n'.join(['schema\tnative-mesh-v1', 'unit\tlength\tmm',
                       'factor\tgeometry_to_SI\t0.001', 'max_edge\t' + edge,
-                      'mesher_mode\tuser-defined', 'mesher_threads\t' + threads]) + '\n'
+                      'mesh_type\tTetrahedral', 'mesh_cells\t3750', 'min_edge\t.1',
+                      'mesher_mode\tuser-defined', 'mesher_threads\t' + threads,
+                      'source\tmesh_type\tMesh.GetMeshType',
+                      'source\tmesh_cells\tMesh.GetNumberOfMeshCells',
+                      'source\tmin_edge\tMesh.GetMinimumEdgeLength',
+                      'source\tmax_edge\tMesh.GetMaximumEdgeLength',
+                      'source\tmesher_mode\tMesh.GetParallelMesherMode("Tet")',
+                      'source\tmesher_threads\tMesh.GetMaxParallelMesherThreads("Tet")']) + '\n'
 
 
 def cube_readback_fixture(edge_m, *, base_z_m=0, length_unit='mm'):
@@ -325,6 +332,59 @@ class NativeModelTests(unittest.TestCase):
             self.assertFalse(mesh['mesh_unit_confirmed'])
             self.assertFalse(mesh['strict_mesher_size_guarantee'])
             self.assertIn('mesh_edge_unit', mesh['unresolved_gates'])
+
+    def test_mesh_reports_actual_type_count_and_getter_provenance_without_enforcement(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.write_model(directory)
+            (Path(directory) / 'native_mesh.tsv').write_text(mesh_text(), encoding='utf-8')
+            mesh = self.module.read_mesh_report(self.case, Path(directory), report)
+            self.assertEqual(mesh['mesh_type'], 'Tetrahedral')
+            self.assertEqual(mesh['mesh_cells'], 3750)
+            self.assertEqual(mesh['min_edge_raw'], .1)
+            self.assertEqual(mesh['query_provenance']['mesh_cells']['getter'], 'Mesh.GetNumberOfMeshCells')
+            self.assertEqual(mesh['mesher_threads_evidence'], 'configured_process_count')
+            self.assertFalse(mesh['mesher_thread_enforcement_verified'])
+            self.assertIn('mesh_edge_freshness', mesh['unresolved_gates'])
+            self.assertIn('mesher_thread_enforcement', mesh['unresolved_gates'])
+            self.assertIn('solver_cpu_enforcement', mesh['unresolved_gates'])
+
+    def test_mesh_macro_includes_documented_statistics_and_no_guessed_cpu_or_plane_getter(self):
+        with tempfile.TemporaryDirectory() as directory:
+            text = self.module.mesh_readback_vba(Path(directory))
+            for getter in ('Mesh.GetMeshType', 'Mesh.GetNumberOfMeshCells', 'Mesh.GetMinimumEdgeLength'):
+                self.assertIn(getter, text)
+            self.assertNotIn('GetMaxCPUs', text)
+            self.assertNotIn('GetDistanceToReferencePlane', text)
+
+    def test_mesh_missing_duplicate_bad_provenance_type_count_and_minimum_fail(self):
+        variants = [mesh_text().replace('mesh_cells\t3750\n', ''),
+                    mesh_text() + 'mesh_cells\t3750\n',
+                    mesh_text().replace('mesh_cells\t3750', 'mesh_cells\t0'),
+                    mesh_text().replace('mesh_cells\t3750', 'mesh_cells\t3.5'),
+                    mesh_text().replace('mesh_type\tTetrahedral', 'mesh_type\tPBA'),
+                    mesh_text().replace('min_edge\t.1', 'min_edge\t.5'),
+                    mesh_text().replace('min_edge\t.1', 'min_edge\tnan'),
+                    mesh_text().replace('source\tmesh_type\tMesh.GetMeshType\n', ''),
+                    mesh_text() + 'source\tmesh_type\tMesh.GetMeshType\n',
+                    mesh_text().replace('source\tmesh_cells\tMesh.GetNumberOfMeshCells',
+                                        'source\tmesh_cells\trequested_configuration')]
+        for text in variants:
+            with self.subTest(text=text), tempfile.TemporaryDirectory() as directory:
+                report = self.write_model(directory)
+                (Path(directory) / 'native_mesh.tsv').write_text(text, encoding='utf-8')
+                with self.assertRaises(ValueError):
+                    self.module.read_mesh_report(self.case, Path(directory), report)
+
+    def test_missing_public_plane_and_cpu_getters_are_explicit_limitation_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.write_model(directory)
+            plane = report['readback_limitations']['reference_plane_readback']
+            self.assertEqual(plane['status'], 'unsupported_public_getter')
+            self.assertEqual(plane['port'], 'Zmax')
+            self.assertEqual(plane['requested_zref_m'], .007)
+            self.assertFalse(plane['configured_value_verified'])
+            self.assertFalse(plane['phase_benchmark_verified'])
+            self.assertIn('solver_cpu_enforcement', report['unresolved_gates'])
 
     def test_mesh_missing_nonfinite_nonpositive_oversize_and_units_fail(self):
         for text in [mesh_text('nan'), mesh_text('0'), mesh_text('-.1'), mesh_text('.6'),

@@ -1,4 +1,4 @@
-# CST absorber skill — 0.2.1-preview
+# CST absorber skill — 0.2.2-preview
 
 Reusable tools for one periodic PEC-backed absorber or an explicitly confirmed
 batch. Geometry is not restricted to TPMS; isotropic frequency tables are not
@@ -6,13 +6,37 @@ restricted to any named material. One case can contain several regions/materials
 
 This revision implements an **experimental executable CST SDK chain**: fresh
 owned project, original model history, model/mesh readback, bounded solver
-start/poll/abort, saved-project result-tree export and owned closure. Tests inject
-SDK/result interfaces. **Real CST execution and native acceptance remain not_run.**
+start/poll/abort, saved-project result-tree export and owned closure. One synthetic
+flat plate was solved with 0.2.1, but **automatic end-to-end native acceptance
+failed** after an archive identity change blocked polling and closure. Exact-owned
+manual cleanup and raw export were separately verified; the failed receipt was
+preserved. **0.2.2 repairs are offline tested and have not been rerun in CST.**
 The initial acceptance path preserves raw evidence and returns validation pending;
 unresolved gates prevent caching a successful physical result. Analysis and plots
 are screening/diagnostic; numerical qualification and certification are false.
 `analyze-native` maps and analyzes that same saved raw export offline, without
 another solve. It preserves the unverified source and PEC transmission assumption.
+
+This patch separates held-session control from archive integrity: exact owned
+polling, abort and without-saving closure remain available after archive drift;
+save/history/solver dispatch/export retain identity and stable SHA256 gates.
+Unexpected archive changes are quarantined, never silently rebound as solver
+output. Async writer attribution and a trusted stable-snapshot path remain
+unresolved, so quarantine still blocks automatic final save/export. Native CLI
+supervision retains pending worker/cleanup/SDK obligations after the case work
+deadline; unknown ownership may require manual intervention. Source roles for
+original tables, FD interpolation and Nth-order Fit are kept separate.
+
+Save workers prepare a snapshot; the caller commits its archive pin only after
+accepting the completed request. Abandonment and commit share the same lock.
+Requests remain reserved until actual callback completion and caller settlement,
+including interrupted thread startup. Timing out cannot permit a late pin commit
+or a parallel replacement request.
+
+[Sanitized native findings](references/native-acceptance-0.2.2.md) explain the
+single-case evidence, synthetic Fit deviation, offline repairs and remaining
+reference-plane, phase, mesh-unit/freshness, actual CPU and material-linkage
+gates. No research-material conclusion or numerical certification is implied.
 
 [SKILL.md](SKILL.md) is the agent entry point. Commands are in
 [usage](references/usage.md), implementation/acceptance markers in

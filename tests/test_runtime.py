@@ -851,5 +851,528 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual((self.root / "state.json").read_bytes(), before)
 
 
+class SupervisedRuntimeTests(unittest.TestCase):
+    """Real controller threads with invented ownership; never query processes."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name) / "run"
+
+    def supervisor(self):
+        self.assertTrue(hasattr(runtime, "RunSupervisor"),
+                        "native CLI needs durable supervision after its wall budget")
+        return runtime.RunSupervisor(poll_interval_seconds=.01,
+                                     callback_timeout_seconds=.1)
+
+    def start_wait(self, supervisor, worker, **kwargs):
+        returned = {}
+        thread = threading.Thread(target=lambda: returned.update(
+            value=supervisor.wait(worker, **kwargs)), daemon=True)
+        thread.start()
+        return thread, returned
+
+    def test_wall_budget_returns_before_owned_cleanup_but_supervision_drains_both(self):
+        supervisor = self.supervisor()
+        worker = DelayedSupervisedWorker(close_delay=.5)
+        started = time.monotonic()
+        result = runtime.run_cases(plan(wall_budget_seconds=.1), self.root, worker,
+                                   resources, supervisor=supervisor)
+        self.assertLess(time.monotonic() - started, .45)
+        self.assertEqual(result["status"], "blocked")
+        self.assertIs(result["exit_ready"], False)
+        self.assertGreater(result["supervision"]["worker_pending"], 0)
+        self.assertGreater(result["supervision"]["cleanup_pending"], 0)
+        before = (self.root / "state.json").read_bytes()
+        final = supervisor.wait(worker)
+        self.assertIs(final["exit_ready"], True)
+        self.assertTrue(worker.closed.is_set())
+        self.assertEqual(final["worker_pending"], 0)
+        self.assertEqual(final["cleanup_pending"], 0)
+        self.assertEqual((self.root / "state.json").read_bytes(), before)
+        self.assertTrue((self.root / "controller.lock").is_file())
+        self.assertTrue((self.root / "blocked.json").is_file())
+        self.assertIs(json.loads((self.root / "supervision.json").read_text())["exit_ready"], True)
+
+    def test_cleanup_callback_must_drain_even_after_worker_reports_closed(self):
+        supervisor = self.supervisor()
+        worker = DelayedSupervisedWorker(close_delay=.03, cleanup_delay=.4)
+        result = runtime.run_cases(plan(wall_budget_seconds=.1), self.root, worker,
+                                   resources, supervisor=supervisor)
+        self.assertTrue(worker.closed.is_set())
+        self.assertIs(result["exit_ready"], False)
+        self.assertGreater(result["supervision"]["cleanup_pending"], 0)
+        self.assertTrue((self.root / "controller.lock").is_file())
+        thread, returned = self.start_wait(supervisor, worker)
+        try:
+            self.assertFalse(worker.cleanup_finished.wait(.03))
+            self.assertTrue(thread.is_alive())
+            self.assertEqual(worker.status_calls, 0)
+        finally:
+            thread.join(2)
+        self.assertFalse(thread.is_alive())
+        self.assertIs(returned["value"]["exit_ready"], True)
+
+    def test_unknown_late_startup_and_pending_sdk_request_never_trigger_second_cleanup(self):
+        supervisor = self.supervisor()
+        worker = DeferredSupervisedWorker()
+        result = runtime.run_cases(plan(), self.root, worker, resources, supervisor=supervisor)
+        self.assertEqual(result["status"], "blocked")
+        thread, returned = self.start_wait(supervisor, worker)
+        try:
+            self.assertTrue(worker.observed.wait(1))
+            self.assertTrue(thread.is_alive())
+            self.assertEqual(worker.cleanup_calls, 0)
+            worker.session_created = True
+            self.assertTrue(thread.is_alive())
+            self.assertEqual(worker.cleanup_calls, 0)
+            worker.request_pending = False
+            worker.creation_pending = False
+        finally:
+            worker.request_pending = False
+            worker.creation_pending = False
+            worker.session_created = True
+            thread.join(2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(worker.cleanup_calls, 1)
+        self.assertIs(returned["value"]["exit_ready"], True)
+        self.assertIs(worker.receipt["owned_closed"], False)
+
+    def test_diagnostic_write_and_update_interrupt_cannot_abandon_owned_cleanup(self):
+        from unittest.mock import patch
+        supervisor = self.supervisor()
+        worker = DeferredSupervisedWorker()
+        runtime.run_cases(plan(), self.root, worker, resources, supervisor=supervisor)
+        original = runtime._write
+        def denied(path, value, **kwargs):
+            if Path(path).name == "supervision.json":
+                raise OSError("synthetic diagnostic write denied")
+            return original(path, value, **kwargs)
+        def interrupted(snapshot):
+            raise KeyboardInterrupt("synthetic update interrupt")
+        with patch.object(runtime, "_write", side_effect=denied):
+            thread, returned = self.start_wait(supervisor, worker, on_update=interrupted)
+            try:
+                self.assertTrue(worker.observed.wait(1))
+                self.assertTrue(thread.is_alive())
+                worker.session_created = True
+                worker.request_pending = False
+                worker.creation_pending = False
+            finally:
+                worker.session_created = True
+                worker.request_pending = False
+                worker.creation_pending = False
+                thread.join(2)
+        self.assertFalse(thread.is_alive())
+        self.assertIs(returned["value"]["exit_ready"], True)
+        errors = returned["value"]["diagnostic_errors"]
+        self.assertIn("OSError", {error["type"] for error in errors})
+        self.assertIn("KeyboardInterrupt", {error["type"] for error in errors})
+        self.assertTrue(worker.stop.is_set())
+
+    def test_hanging_status_call_is_tracked_and_never_duplicated(self):
+        supervisor = self.supervisor()
+        worker = DeferredSupervisedWorker()
+        runtime.run_cases(plan(), self.root, worker, resources, supervisor=supervisor)
+        entered, release = threading.Event(), threading.Event()
+        def slow_status():
+            worker.status_calls += 1
+            entered.set()
+            release.wait(2)
+            return {"request_pending": False, "session_creation_pending": False,
+                    "session_created": True, "owned_closed": True}
+        worker.supervision_status = slow_status
+        thread, returned = self.start_wait(supervisor, worker)
+        try:
+            self.assertTrue(entered.wait(1))
+            self.assertTrue(thread.is_alive())
+            self.assertEqual(worker.status_calls, 1)
+            self.assertEqual(worker.cleanup_calls, 0)
+        finally:
+            release.set()
+            thread.join(2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(worker.status_calls, 1)
+        self.assertIs(returned["value"]["exit_ready"], True)
+
+    def test_unknown_creation_without_pending_request_requires_explicit_evidence(self):
+        supervisor = self.supervisor()
+        worker = DeferredSupervisedWorker()
+        worker.request_pending = False
+        worker.creation_pending = False
+        runtime.run_cases(plan(), self.root, worker, resources, supervisor=supervisor)
+        thread, returned = self.start_wait(supervisor, worker)
+        try:
+            self.assertTrue(worker.observed.wait(1))
+            self.assertTrue(thread.is_alive())
+            self.assertEqual(worker.cleanup_calls, 0)
+            worker.owned_closed = True
+            worker.session_created = False
+        finally:
+            worker.owned_closed = True
+            worker.session_created = False
+            thread.join(2)
+        self.assertFalse(thread.is_alive())
+        self.assertIs(returned["value"]["exit_ready"], True)
+        self.assertEqual(worker.cleanup_calls, 0)
+
+    def test_status_must_be_reobserved_after_a_successful_cleanup_receipt(self):
+        supervisor = self.supervisor()
+        worker = DeferredSupervisedWorker()
+        worker.request_pending = False
+        worker.creation_pending = False
+        worker.session_created = True
+        def contradictory_close(**kwargs):
+            worker.cleanup_calls += 1
+            return {"owned_closed": True}
+        worker.supervise_cleanup = contradictory_close
+        runtime.run_cases(plan(), self.root, worker, resources, supervisor=supervisor)
+        thread, returned = self.start_wait(supervisor, worker)
+        try:
+            self.assertTrue(worker.observed.wait(1))
+            threading.Event().wait(.03)
+            self.assertTrue(thread.is_alive())
+            worker.owned_closed = True
+        finally:
+            worker.owned_closed = True
+            thread.join(2)
+        self.assertFalse(thread.is_alive())
+        self.assertGreaterEqual(worker.status_calls, 2)
+        self.assertIs(returned["value"]["exit_ready"], True)
+
+    def test_controller_no_dispatch_still_checks_explicit_backend_idle_evidence(self):
+        supervisor = self.supervisor()
+        worker = DeferredSupervisedWorker()
+        worker.request_pending = False
+        worker.creation_pending = False
+        worker.session_created = False
+        worker.owned_closed = True
+        runtime.request_pause(self.root)
+        result = runtime.run_cases(plan(), self.root, worker, resources, supervisor=supervisor)
+        self.assertEqual(result["status"], "paused")
+        self.assertIs(result["supervision"]["no_dispatch_proven"], True)
+        final = supervisor.wait(worker)
+        self.assertIs(final["exit_ready"], True)
+        self.assertEqual(worker.calls, 0)
+        self.assertEqual(worker.cleanup_calls, 0)
+
+    def test_interrupt_immediately_after_dispatch_retains_and_stops_the_owned_worker(self):
+        from unittest.mock import patch
+        supervisor = self.supervisor()
+        worker = DelayedSupervisedWorker(close_delay=.15)
+        original = runtime._async_call
+        def interrupted_dispatch(function, *args, **kwargs):
+            thread, returned = original(function, *args, **kwargs)
+            if function is worker:
+                raise KeyboardInterrupt("synthetic dispatch return interrupted")
+            return thread, returned
+        try:
+            with patch.object(runtime, "_async_call", side_effect=interrupted_dispatch):
+                result = runtime.run_cases(plan(), self.root, worker, resources,
+                                           supervisor=supervisor)
+            self.assertEqual(result["status"], "blocked")
+            self.assertTrue(worker.stop.is_set(),
+                            "a thread started before interruption escaped owned supervision")
+            self.assertGreater(result["supervision"]["worker_pending"], 0)
+        finally:
+            if worker.stop is not None:
+                worker.stop.set()
+            if worker.directory is not None:
+                worker.closed.wait(2)
+        final = supervisor.wait(worker)
+        self.assertIs(final["exit_ready"], True)
+
+    def test_interrupt_after_supervised_cleanup_dispatch_cannot_dispatch_a_second_call(self):
+        from unittest.mock import patch
+        supervisor = self.supervisor()
+        worker = DeferredSupervisedWorker()
+        worker.session_created = True
+        worker.request_pending = False
+        worker.creation_pending = False
+        entered, release = threading.Event(), threading.Event()
+        def held_cleanup(**kwargs):
+            worker.cleanup_calls += 1
+            entered.set()
+            release.wait(2)
+            worker.owned_closed = True
+            return {"owned_closed": True}
+        worker.supervise_cleanup = held_cleanup
+        runtime.run_cases(plan(), self.root, worker, resources, supervisor=supervisor)
+        original = runtime._async_call
+        interrupted = False
+        def interrupted_dispatch(function, *args, **kwargs):
+            nonlocal interrupted
+            thread, returned = original(function, *args, **kwargs)
+            if entered.is_set() and not interrupted:
+                interrupted = True
+                raise KeyboardInterrupt("synthetic supervised cleanup dispatch interrupted")
+            return thread, returned
+        with patch.object(runtime, "_async_call", side_effect=interrupted_dispatch):
+            thread, returned = self.start_wait(supervisor, worker)
+            try:
+                self.assertTrue(entered.wait(1))
+                threading.Event().wait(.15)
+                self.assertTrue(thread.is_alive())
+                self.assertEqual(worker.cleanup_calls, 1)
+                self.assertEqual(worker.status_calls, 1,
+                                 "a still-running cleanup was lost and another SDK-shaped call was dispatched")
+            finally:
+                release.set()
+                thread.join(2)
+        self.assertFalse(thread.is_alive())
+        self.assertIs(returned["value"]["exit_ready"], True)
+
+    def test_worker_launch_without_start_handshake_retains_lock_and_stop_until_completion(self):
+        from unittest.mock import patch
+        supervisor = self.supervisor()
+        worker = DeferredSupervisedWorker()
+        worker.session_created = False
+        worker.owned_closed = True
+        worker.request_pending = False
+        worker.creation_pending = False
+        gate = threading.Event()
+        with interrupted_thread_handshake(lambda function: function is worker, gate) as launched:
+            result = runtime.run_cases(plan(), self.root, worker, resources,
+                                       supervisor=supervisor)
+            try:
+                self.assertFalse(launched[0].is_alive())
+                self.assertEqual(worker.calls, 0)
+                self.assertGreater(result["supervision"]["worker_pending"], 0)
+                self.assertTrue((self.root / "controller.lock").is_file())
+                self.assertTrue(supervisor._workers[0][2].is_set())
+                thread, returned = self.start_wait(supervisor, worker)
+                self.assertTrue(thread.is_alive())
+                self.assertEqual(worker.status_calls, 0)
+            finally:
+                gate.set()
+                if "thread" in locals():
+                    thread.join(2)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(worker.calls, 1)
+            self.assertIs(returned["value"]["exit_ready"], True)
+
+    def test_status_launch_without_start_handshake_cannot_be_replaced_or_approve_exit(self):
+        supervisor = self.supervisor()
+        worker = DeferredSupervisedWorker()
+        worker.session_created = False
+        worker.owned_closed = True
+        worker.request_pending = False
+        worker.creation_pending = False
+        supervisor.begin(worker, self.root)
+        self.root.mkdir()
+        supervisor.finish_controller()
+        gate = threading.Event()
+        match = lambda function: getattr(function, "__self__", None) is worker and getattr(
+            function, "__name__", None) == "supervision_status"
+        with interrupted_thread_handshake(match, gate) as launched:
+            thread, returned = self.start_wait(supervisor, worker)
+            try:
+                self.assertTrue(launched.entered.wait(1))
+                threading.Event().wait(.03)
+                self.assertTrue(thread.is_alive())
+                self.assertEqual(worker.status_calls, 0)
+                self.assertGreater(supervisor.snapshot()["supervision_callback_pending"], 0)
+            finally:
+                gate.set()
+                thread.join(2)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(worker.status_calls, 1)
+            self.assertIs(returned["value"]["exit_ready"], True)
+
+    def test_supervised_cleanup_without_start_handshake_stays_single_pending_call(self):
+        supervisor = self.supervisor()
+        worker = DeferredSupervisedWorker()
+        worker.session_created = True
+        worker.request_pending = False
+        worker.creation_pending = False
+        runtime.run_cases(plan(), self.root, worker, resources, supervisor=supervisor)
+        gate = threading.Event()
+        match = lambda function: getattr(function, "__name__", None) == "<lambda>"
+        with interrupted_thread_handshake(match, gate) as launched:
+            thread, returned = self.start_wait(supervisor, worker)
+            try:
+                self.assertTrue(launched.entered.wait(1))
+                threading.Event().wait(.03)
+                self.assertTrue(thread.is_alive())
+                self.assertEqual(worker.status_calls, 1)
+                self.assertEqual(worker.cleanup_calls, 0)
+                self.assertGreater(supervisor.snapshot()["supervision_callback_pending"], 0)
+            finally:
+                gate.set()
+                thread.join(2)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(worker.cleanup_calls, 1)
+            self.assertIs(returned["value"]["exit_ready"], True)
+
+    def test_controller_cleanup_without_start_handshake_remains_tracked_until_completion(self):
+        supervisor = self.supervisor()
+        worker = DelayedSupervisedWorker(close_delay=.03)
+        gate = threading.Event()
+        match = lambda function: getattr(function, "__name__", None) == "close"
+        with interrupted_thread_handshake(match, gate) as launched:
+            result = runtime.run_cases(plan(wall_budget_seconds=.1), self.root, worker,
+                                       resources, supervisor=supervisor)
+            try:
+                worker.closed.wait(1)
+                self.assertGreater(result["supervision"]["cleanup_pending"], 0)
+                self.assertTrue((self.root / "controller.lock").is_file())
+                thread, returned = self.start_wait(supervisor, worker)
+                self.assertTrue(thread.is_alive())
+                self.assertEqual(worker.status_calls, 0)
+            finally:
+                gate.set()
+                if "thread" in locals():
+                    thread.join(2)
+            self.assertFalse(thread.is_alive())
+            self.assertTrue(worker.cleanup_finished.is_set())
+            self.assertIs(returned["value"]["exit_ready"], True)
+
+    def test_interrupt_before_controller_setup_finishes_its_supervisor_without_dispatch(self):
+        from unittest.mock import patch
+        supervisor = self.supervisor()
+        worker = DeferredSupervisedWorker()
+        worker.session_created = False
+        worker.owned_closed = True
+        worker.request_pending = False
+        worker.creation_pending = False
+        self.root.mkdir()
+        try:
+            with patch.object(runtime.time, "monotonic", side_effect=KeyboardInterrupt(
+                    "synthetic pre-setup interruption")):
+                runtime.run_cases(plan(), self.root, worker, resources, supervisor=supervisor)
+        except KeyboardInterrupt:
+            pass
+        try:
+            self.assertTrue(supervisor.started)
+            self.assertIs(supervisor.snapshot()["controller_pending"], False,
+                          "setup interruption left a controller that can never complete")
+            final = supervisor.wait(worker)
+            self.assertIs(final["exit_ready"], True)
+            self.assertEqual(worker.calls, 0)
+            self.assertEqual(worker.cleanup_calls, 0)
+        finally:
+            supervisor.finish_controller()
+
+
+@contextmanager
+def interrupted_thread_handshake(match, gate):
+    """Gate a real Python thread before handshake and interrupt its start wait.
+
+    This fixture launches only Python test callbacks, never OS processes. It
+    records and drains every launched thread before releasing temp evidence.
+    """
+    from unittest.mock import patch
+    original = threading.Thread
+    class Launched(list):
+        entered = threading.Event()
+    launched = Launched()
+    class Interrupted(original):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            cells = getattr(self._target, "__closure__", None) or ()
+            self.synthetic_selected = not launched and any(match(cell.cell_contents) for cell in cells)
+        def _bootstrap_inner(self):
+            if self.synthetic_selected:
+                gate.wait(3)
+            return super()._bootstrap_inner()
+        def start(self):
+            if not self.synthetic_selected:
+                return super().start()
+            launched.append(self)
+            original_wait = self._started.wait
+            def interrupted_wait(*args, **kwargs):
+                launched.entered.set()
+                raise KeyboardInterrupt("synthetic Thread.start handshake interruption")
+            self._started.wait = interrupted_wait
+            try:
+                return super().start()
+            finally:
+                self._started.wait = original_wait
+    with patch.object(threading, "Thread", Interrupted):
+        try:
+            yield launched
+        finally:
+            gate.set()
+            for thread in launched:
+                if not thread._started.wait(2):
+                    raise AssertionError("synthetic interrupted start must eventually handshake")
+                thread.join(2)
+                if thread.is_alive():
+                    raise AssertionError("synthetic interrupted thread must drain")
+
+
+class DeferredSupervisedWorker:
+    """Invented pending SDK state; no SDK object or process observation exists."""
+    def __init__(self):
+        self.request_pending = True
+        self.creation_pending = True
+        self.session_created = "unknown"
+        self.owned_closed = False
+        self.cleanup_calls = 0
+        self.status_calls = 0
+        self.calls = 0
+        self.observed = threading.Event()
+        self.stop = None
+        self.receipt = {"status": "failed", "owned_closed": False,
+                        "session_created": "unknown", "artifacts": []}
+
+    def __call__(self, case, directory, stop):
+        self.calls += 1
+        self.stop = stop
+        return self.receipt
+
+    def supervision_status(self):
+        self.status_calls += 1
+        self.observed.set()
+        return {"request_pending": self.request_pending,
+                "session_creation_pending": self.creation_pending,
+                "session_created": self.session_created,
+                "owned_closed": self.owned_closed}
+
+    def supervise_cleanup(self, **kwargs):
+        if self.request_pending or self.creation_pending:
+            raise AssertionError("supervisor dispatched concurrent cleanup")
+        self.cleanup_calls += 1
+        self.owned_closed = True
+        return {"owned_closed": True, "synthetic_only": True}
+
+
+class DelayedSupervisedWorker(DeferredSupervisedWorker):
+    def __init__(self, *, close_delay, cleanup_delay=0):
+        super().__init__()
+        self.close_delay = close_delay
+        self.cleanup_delay = cleanup_delay
+        self.closed = threading.Event()
+        self.cleanup_finished = threading.Event()
+        self.directory = None
+        self.identity = None
+        self.request_pending = False
+        self.creation_pending = False
+        self.session_created = True
+
+    def __call__(self, case, directory, stop):
+        self.calls += 1
+        self.stop = stop
+        self.directory = Path(directory).resolve()
+        self.identity = {"session_id": "synthetic-owned", "pid": 314159,
+                         "created_at": "synthetic-creation",
+                         "executable": str(self.directory / "not-a-real-executable.exe"),
+                         "run_dir": str(self.directory)}
+        stop.wait(2)
+        threading.Event().wait(self.close_delay)
+        self.owned_closed = True
+        self.closed.set()
+        return {"status": "failed", "owned_closed": True, "artifacts": [],
+                "interruption_acknowledged": True}
+
+    def ownership(self, directory):
+        return self.identity, self.identity
+
+    def cleanup_identity(self, recorded):
+        self.closed.wait(2)
+        threading.Event().wait(self.cleanup_delay)
+        self.cleanup_finished.set()
+        return {"owned_closed": True, "synthetic_only": True}
+
+
 if __name__ == "__main__":
     unittest.main()

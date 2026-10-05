@@ -5,7 +5,7 @@ description: Use when a user requests CST periodic PEC-backed absorber simulatio
 
 # CST absorber — single first
 
-**0.2.1-preview：已实现实验性 CST SDK 执行链；真实 CST 验收仍为 not_run。**
+**0.2.2-preview：一次合成平板原生求解完成，自动端到端验收失败；本补丁仅离线修复，未重跑 CST。**
 先读 [能力边界](references/capabilities.json)。注入接口测试不能证明实机兼容、
 材料拟合或数值精度。技能不提供 CST 许可证，也不替代执行授权和工具审批。
 
@@ -30,7 +30,7 @@ azimuth 为 0°、一次 TE 或 TM。透射双端口、各向异性、表面阻�
    要求真实求解时，先确认用户已授权且资源独占，再使用 `run`/`resume` 的
    `--backend cst --authorize-live --exclusive-resources`，并明确选择
    `--acceptance-run` 或 `--result-profile PATH`。未满足条件不创建会话。
-   本发布任务未运行 CST；后续实机步骤见 [native acceptance](references/cst-validation.md)。
+   0.2.2 修复阶段未运行 CST；此前 0.2.1 合成实机自动验收失败。剩余门禁见 [native acceptance](references/cst-validation.md)。
 3. 首次验收通过 `--acceptance-run` 保存实际树、run ID、原始复数/单位、功率和
    读回记录。验收未完成时返回 `failed/native_validation_pending`，不缓存物理成功。
    结果映射必须绑定真实树、单位、模态编号及参数，不能猜叶节点、Gamma 单位，

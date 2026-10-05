@@ -11,6 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 
@@ -461,6 +462,68 @@ class LiveCliDispatchTests(unittest.TestCase):
             self.fail("live CLI flags must parse: " + str(error))
         self.assertTrue(parsed.exclusive_resources)
         self.assertTrue(parsed.acceptance_run)
+
+    def test_help_retains_failed_native_trial_and_current_unqualified_status(self):
+        help_text = self.cli.parser().format_help()
+        self.assertIn("trial failed", help_text)
+        self.assertIn("preview remains unqualified", help_text)
+
+    def test_child_cli_preserves_late_synthetic_owned_cleanup_before_interpreter_exit(self):
+        """Patch only a child-local pure backend; no real SDK is constructed."""
+        configuration = config_fixture()
+        configuration["runtime"]["wall_budget_seconds"] = .5
+        self.config.write_text(json.dumps(configuration), encoding="utf-8")
+        marker = self.root / "synthetic-owned-close.json"
+        child = self.root / "supervised-cli-probe.py"
+        child.write_text(textwrap.dedent('''
+            import json
+            from pathlib import Path
+            import sys
+            import threading
+            sys.path.insert(0, sys.argv[1])
+            import absorber_cli
+            import cst_absorber.backend as backend
+            import cst_absorber.runtime as runtime
+            runtime._default_resources = lambda root: {'available_RAM_GiB': 8, 'free_disk_GiB': 8}
+            class SyntheticBackend:
+                def __init__(self, **kwargs):
+                    self.last_receipt = None
+                    self.started = False
+                    self.closed = threading.Event()
+                    self.marker = Path(sys.argv[3])
+                def __call__(self, case, directory, stop):
+                    self.started = True
+                    stop.wait(2)
+                    threading.Event().wait(.6)
+                    self.closed.set()
+                    self.marker.write_text(json.dumps({'synthetic_only': True, 'owned_closed': True}))
+                    self.last_receipt = {'status': 'failed', 'owned_closed': True,
+                        'interruption_acknowledged': True, 'artifacts': [],
+                        'CST_execution': 'injected_test_only'}
+                    return self.last_receipt
+                def supervision_status(self):
+                    return {'request_pending': False, 'session_creation_pending': False,
+                            'session_created': self.started,
+                            'owned_closed': not self.started or self.closed.is_set()}
+                def supervise_cleanup(self, **kwargs):
+                    raise AssertionError('synthetic worker must finish before further cleanup')
+            backend.CstBackend = SyntheticBackend
+            raise SystemExit(absorber_cli.main(['run', sys.argv[2], '--out-dir', sys.argv[4],
+                '--backend', 'cst', '--authorize-live', '--exclusive-resources', '--acceptance-run']))
+        '''), encoding="utf-8")
+        process = subprocess.run([sys.executable, "-B", str(child), str(REPO / "scripts"),
+                                  str(self.config), str(marker), str(self.root / "run")],
+                                 capture_output=True, text=True, encoding="utf-8", timeout=5)
+        self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
+        self.assertTrue(marker.is_file(),
+                        "CLI interpreter exited while its injected owned worker was still closing")
+        result = json.loads(process.stdout)
+        self.assertEqual(result["status"], "blocked")
+        self.assertIs(result["exit_ready"], True)
+        self.assertIs(result["supervision"]["owned_closed"], True)
+        self.assertIs(result["physical_certification"], False)
+        self.assertTrue((self.root / "run" / "controller.lock").is_file())
+        self.assertTrue((self.root / "run" / "blocked.json").is_file())
 
 
 if __name__ == "__main__":

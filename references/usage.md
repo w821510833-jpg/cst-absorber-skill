@@ -32,8 +32,8 @@ modal requirements and rejects a configured `runtime.max_modes` below the requir
 count. `scenario.reference_plane_m` is an offset from `geometry.cell.height_m`
 along +z into the air: `zref = height_m + reference_plane_m`. The candidate Zmax
 deembedding distance is `reference_plane_m - air_height_m` (nonpositive for a
-reference plane within that air span). The actual complex-S reference-plane
-readback remains `not_run` and must pass real acceptance.
+reference plane within that air span). Actual complex-S reference-plane readback and a phase benchmark remain
+unresolved. This repair was not rerun in CST.
 
 `prepare-cst` emits original configuration and acceptance artifacts only,
 with numbered output folders and case IDs in receipts; it neither launches CST nor
@@ -104,10 +104,13 @@ project, applies original model history, checks model/mesh readbacks, starts and
 polls the owned solver with bounded abort handling, saves/closes its own project,
 exports the actual saved result tree, optionally maps/analyzes the exports, and
 checks its environment closure. Implementation and injected-interface tests do
-not establish that a CST build has accepted this chain. Native API/build,
-material/geometry readback, modal S/Gamma power normalization and reference plane,
-independent power closure, session lifecycle and real single-case acceptance
-remain `not_run` in this release. No CLI mock worker is provided. Result receipts
+not establish that a CST build has accepted this chain. A prior 0.2.1 single synthetic plate solved successfully, but automatic
+end-to-end acceptance failed after archive identity drift blocked session
+control. Exact-owned manual cleanup and saved raw export were separately
+verified. The 0.2.2 repairs have not been rerun in CST. The prior plate provides
+bounded observations of units, one brick, two fundamental modes and power
+closure; it does not validate imported/multiple regions, arbitrary modes, phase,
+resource enforcement, material-solver linkage or this repaired lifecycle. No CLI mock worker is provided. Result receipts
 are preserved; software completion never changes `numerically_qualified=false`
 or `physical_certification=false`.
 
@@ -121,8 +124,9 @@ python scripts/absorber_cli.py run examples/single.json --out-dir outputs/native
 python scripts/absorber_cli.py resume examples/single.json --out-dir outputs/native_acceptance --backend cst --authorize-live --exclusive-resources --acceptance-run
 ```
 
-No real CST invocation was performed while
-building or testing this package. `resume` reuses the controller's integrity,
+No real CST invocation was performed while implementing or testing the
+0.2.2 repairs; the prior failed 0.2.1 native trial is documented in
+[native findings](native-acceptance-0.2.2.md). `resume` reuses the controller's integrity,
 ownership and cache checks; it does not relax authorization gates.
 Use `resume` for the same explicit run after a pause. A nonretryable validation
 failure is retained and cannot be resimulated by increasing max_attempts or adding
@@ -141,6 +145,49 @@ before dispatch preserves any staged attempt as `controller_not_started`, with
 claim and does not charge the failure budget. A resumed attempt uses a new
 directory. Invalid or linked pause controls are rejected by both setter and reader.
 
+
+The CLI keeps a `RunSupervisor` active after the controller work deadline until
+all tracked worker, cleanup and native callback obligations have ended and
+strict owned closure is confirmed. Startup handshake interruption is uncertainty,
+not evidence that a thread was never launched. An unknown ownership/closure
+state may require exact-owned manual intervention while the interpreter stays
+open. A timeout grants no authority to force-kill processes. Late safe closure
+updates separate `supervision.json`; it never upgrades the original failed or
+blocked receipt, clears its retained lock, or restores a spent failure budget.
+
+Python API callers must explicitly retain this lifetime guard. With a previously
+reviewed prepared plan, an authorized native worker and an explicit output path:
+
+```python
+from cst_absorber.runtime import RunSupervisor, run_cases
+
+supervisor = RunSupervisor()
+try:
+    result = run_cases(plan, output_root, worker, supervisor=supervisor)
+finally:
+    if supervisor.started:
+        supervision = supervisor.wait(worker)
+```
+
+The generic `run_cases` API without a supervisor retains bounded caller behavior;
+it does not by itself keep the interpreter alive for pending native requests.
+Prefer the gated CLI for native work. Neither route authorizes CST or bypasses
+the host tool approval policy.
+
+Material response profiles bind exact leaves and distinct source roles.
+`Data list` is the original table, `FD - Interpolated` is the frequency-domain
+interpolation response, and `Fit` is the Nth-order fitting response; a title
+containing “Fit” cannot establish the role. Split complex properties use
+`representation: "real_positive_loss"`, exact `real` and `loss` selectors,
+`sample_policy: "exact_planned_subset"`, the native material name and the stated
+`exp(+jωt)` convention. Conductivity treatment must be explicit and the native
+conductivity declaration must be zero when loss already includes conductivity.
+That declaration is not native conductivity verification. Only existing exact
+planned frequencies may be compared; dense curves are never silently
+interpolated or snapped. An FD match cannot clear a Fit or solver-linkage gate.
+See [native validation](cst-validation.md) and the regression profiles in tests
+for the complete selector fields.
+
 `pause` writes the runtime's pause request. `status` reads runtime evidence
 and preserves backend receipts; its execution label defaults to `unknown` because a
 controller receipt does not establish whether CST ran. Neither control command
@@ -151,3 +198,7 @@ errors and failed/blocked live receipts return 2 with an explanatory message.
 Argument syntax errors use standard
 argparse help. Completion of offline preparation or analysis does not certify a
 physical model or numerical accuracy.
+
+Injected test interfaces are labeled `CST_execution=not_run_injected_test_interface`.
+Any other transport without verified native provenance is labeled
+`not_run_unverified_transport`; a raw tree or profile cannot upgrade that label.

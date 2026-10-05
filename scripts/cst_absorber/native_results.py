@@ -366,13 +366,27 @@ def _integer(value):
 
 
 def _unit_in_label(label, unit):
-    return label.endswith(' / ' + unit) or label.endswith('[' + unit + ']')
+    return label == unit or label.endswith(' / ' + unit) or label.endswith('[' + unit + ']')
 
 
 class _IdentityUnresolved(ValueError):
     def __init__(self, gate, message):
         super().__init__(message)
         self.gate = gate
+
+
+def _material_identity(curve):
+    """Identify supported native material leaves, never their shared Fit titles."""
+    match = re.fullmatch(r"1D Results[\\/]Materials[\\/](?P<material>[^\\/]+)[\\/]Dispersive[\\/]"
+                         r"(?P<component>Eps|Mu)(?P<prime>'{1,2}) \((?P<source>Fit|FD - Interpolated|Data list)\)",
+                         curve['treepath'])
+    if match is None:
+        return None
+    return {'native_material_name': match['material'],
+            'component': 'epsilon' if match['component'] == 'Eps' else 'mu',
+            'part': 'real' if match['prime'] == "'" else 'loss',
+            'source_role': {'Fit': 'nth_order_fit', 'FD - Interpolated': 'fd_interpolated',
+                            'Data list': 'data_list'}[match['source']]}
 
 
 def _identity_rule(rule, required, gate, *, prefix=False):
@@ -500,7 +514,7 @@ def canonicalize_raw_results(raw, profile, case, model_report, out_dir):
             by_key[key] = curve
         used = set()
 
-        def select(selector, role):
+        def select(selector, role, *, material_grid=False, native_material_axis=False, native_s_axis=False):
             selected_run = _integer(selector['run_id'])
             key = (selector['treepath'], selected_run)
             if selected_run != run or key not in by_key:
@@ -524,12 +538,18 @@ def canonicalize_raw_results(raw, profile, case, model_report, out_dir):
             y_factor = y_factors.get(y_unit)
             if (x_factor is None or y_factor is None or _strict_number(selector['x_to_Hz']) != x_factor
                     or _strict_number(selector['y_scale']) != y_factor
-                    or not _unit_in_label(curve['xlabel'], x_unit) or not _unit_in_label(curve['ylabel'], y_unit)):
+                    or not _unit_in_label(curve['xlabel'], x_unit)
+                    or not (_unit_in_label(curve['ylabel'], y_unit)
+                            or role == 'material' and native_material_axis and curve['ylabel'] == '' and y_unit == '1'
+                            or role == 'reflection' and native_s_axis and curve['ylabel'] == '' and y_unit == '1')):
                 raise ValueError('actual axis units and declared conversion factors must agree')
             x = [_strict_number(value) * x_factor for value in curve['x']]
             y = [_complex_value(value) * y_factor for value in curve['y']]
-            if len(x) != curve['point_count'] or len(y) != len(x) or x != frequencies:
+            if (len(x) != curve['point_count'] or len(y) != len(x)
+                    or not (role == 'material' and material_grid) and x != frequencies):
                 raise ValueError('actual frequencies/row lengths must exactly match planned frequencies')
+            if not x or any(value <= 0 for value in x) or any(b <= a for a, b in zip(x, x[1:])):
+                raise ValueError('actual frequencies must be positive and strictly increasing')
             if any(not math.isfinite(value.real) or not math.isfinite(value.imag) for value in y):
                 raise ValueError('converted values must remain finite')
             used.add(key)
@@ -582,8 +602,19 @@ def canonicalize_raw_results(raw, profile, case, model_report, out_dir):
         for mode in profile['modes']:
             if mode['polarization'] not in ('TE', 'TM'):
                 raise ValueError('only explicitly mapped TE/TM spectra are supported')
-            coefficients, source = select(mode['reflection'], 'reflection')
-            actual_column = _extract_identity(s_rule, source, 's_matrix_incident_column')
+            selector = mode['reflection']
+            candidate = by_key.get((selector['treepath'], _integer(selector['run_id'])))
+            if candidate is None:
+                raise ValueError('exact actual tree/run selector does not exist for requested run')
+            actual_column = _extract_identity(s_rule, candidate, 's_matrix_incident_column')
+            # The native S tree has an empty dimensionless ylabel. Other trees,
+            # including adaptive pass curves, cannot borrow that interpretation.
+            native_s = re.fullmatch(r'1D Results[\\/]S-Parameters[\\/]S(?P<receive_port>[A-Za-z0-9_.-]+)'
+                                    r'\((?P<receive_mode>[0-9]+)\),(?P<incident_port>[A-Za-z0-9_.-]+)'
+                                    r'\((?P<incident_mode>[0-9]+)\)', candidate['treepath'])
+            native_axis = bool(native_s and all(native_s[key] == str(actual_column[key]) for key in
+                                                ('receive_port', 'receive_mode', 'incident_port', 'incident_mode')))
+            coefficients, source = select(selector, 'reflection', native_s_axis=native_axis)
             receipt['excitation_identity']['s_columns'].append(actual_column)
             receiving_identity = mode_identity(mode, True)
             if ((actual_column['receive_port'], actual_column['receive_mode']) != receiving_identity[:2]
@@ -650,10 +681,18 @@ def canonicalize_raw_results(raw, profile, case, model_report, out_dir):
                 raise ValueError('fitted-response mapping must cover each case material exactly once')
             fit_report['source_role'] = 'profile_declared_fitted_response'
             fit_report['native_acceptance'] = 'pending'
-            all_match = True
+            receipt['unresolved_gates'].append('material_solver_response_linkage')
+            all_match, complete, roles = True, True, set()
             for entry in fit_entries:
-                if entry.get('role') != 'fitted_response':
+                role = entry.get('role')
+                if role not in ('fitted_response', 'fd_interpolated_response'):
                     raise ValueError('original material response is not fitted-response evidence')
+                source_role = entry.get('source_role', 'profile_declared_fitted_response')
+                expected_role = 'nth_order_fit' if role == 'fitted_response' else 'fd_interpolated'
+                if source_role not in (expected_role, 'profile_declared_fitted_response') or (
+                        role == 'fd_interpolated_response' and source_role != expected_role):
+                    raise _IdentityUnresolved('material_source_role_identity', 'declared material source role disagrees with response role')
+                roles.add(role)
                 convention = entry['source_time_convention']
                 if convention not in ('exp(+jωt)', 'exp(-jωt)'):
                     raise ValueError('material complex time convention must be explicit')
@@ -665,25 +704,76 @@ def canonicalize_raw_results(raw, profile, case, model_report, out_dir):
                 expected = case['material_samples'][material_id]
                 if expected['frequencies_Hz'] != frequencies or expected.get('time_convention', 'exp(+jωt)') != 'exp(+jωt)':
                     raise ValueError('prepared material sample axes/convention disagree')
+                if _strict_number(expected.get('conductivity_S_m', 0)) != 0:
+                    raise ValueError('prepared conductivity must be zero because loss is included in epsilon')
+                if 'native_conductivity_S_m' in entry and _strict_number(entry['native_conductivity_S_m']) != 0:
+                    raise ValueError('native conductivity would count epsilon loss twice')
                 material_report = {'material_id': material_id, 'role': entry['role'],
-                                   'source_role': 'profile_declared_fitted_response',
+                                   'source_role': source_role,
                                    'source_time_convention': convention, 'relative_tolerance': rtol,
                                    'absolute_tolerance': atol, 'max_absolute_error': 0.0, 'matched': None,
                                    'comparison_complete': False,
                                    'components': {}}
                 fit_report['materials'].append(material_report)
-                material_matched = True
+                material_matched, material_complete = True, True
                 for component in ('epsilon', 'mu'):
-                    values, source = select(entry[component], 'material')
-                    if 'original' in (source['title'] + ' ' + source['treepath']).lower():
-                        raise ValueError('original-data curve cannot be called fitted-response evidence')
-                    if convention == 'exp(-jωt)':
-                        values = [value.conjugate() for value in values]
+                    descriptor = entry[component]
+                    split = descriptor.get('representation') == 'real_positive_loss'
+                    component_report = {}
+                    if split:
+                        if (source_role != expected_role or descriptor.get('sample_policy') != 'exact_planned_subset'
+                                or convention != 'exp(+jωt)'):
+                            raise ValueError('native positive-loss components require explicit source role, exact samples and exp(+jωt)')
+                        native_name = entry.get('native_material_name')
+                        if native_name != 'mat_' + material_id:
+                            raise _IdentityUnresolved('material_source_role_identity', 'native material association differs from the current model adapter')
+                        if entry.get('conductivity_treatment') != 'included_in_epsilon' or entry.get('native_conductivity_S_m') != 0:
+                            raise ValueError('split material response requires explicit zero native conductivity and loss included in epsilon')
+                        receipt['unresolved_gates'].append('material_conductivity_readback')
+                        part_values, grids, sources = {}, {}, {}
+                        for part in ('real', 'loss'):
+                            selector = descriptor[part]
+                            candidate = by_key.get((selector['treepath'], _integer(selector['run_id'])))
+                            identity = _material_identity(candidate) if candidate is not None else None
+                            if identity != {'native_material_name': native_name, 'component': component,
+                                            'part': part, 'source_role': source_role}:
+                                raise _IdentityUnresolved('material_source_role_identity', 'actual material leaf does not match material, component, part and source role')
+                            data, source = select(selector, 'material', material_grid=True, native_material_axis=True)
+                            if any(value.imag != 0 or part == 'loss' and value.real < 0 for value in data):
+                                raise ValueError('split native material components must be real with nonnegative positive loss')
+                            part_values[part] = [value.real for value in data]
+                            grids[part] = [_strict_number(value) * selector['x_to_Hz'] for value in source['x']]
+                            sources[part] = {key: source[key] for key in ('treepath', 'title', 'xlabel', 'ylabel', 'run_id')}
+                        if grids['real'] != grids['loss']:
+                            raise ValueError('real and positive-loss material frequency grids must agree exactly')
+                        grid = grids['real']
+                        values = [complex(real, -loss) for real, loss in zip(part_values['real'], part_values['loss'])]
+                        component_report.update(representation='real_positive_loss', sources=sources,
+                                                actual_frequencies_Hz=grid, sample_policy='exact_planned_subset')
+                    else:
+                        if 'representation' in descriptor or role != 'fitted_response':
+                            raise ValueError('unsupported material representation or complex FD source')
+                        values, source = select(descriptor, 'material')
+                        identity = _material_identity(source)
+                        names = (source['title'] + ' ' + source['treepath']).lower()
+                        if identity is not None or 'original' in names or 'data list' in names or 'fd - interpolated' in names:
+                            raise _IdentityUnresolved('material_source_role_identity', 'split, original-data or FD-interpolated curve cannot supply a complex fitted response')
+                        receipt['unresolved_gates'].append('material_source_role_identity')
+                        if convention == 'exp(-jωt)':
+                            values = [value.conjugate() for value in values]
+                        grid = frequencies
+                        component_report.update({key: source[key] for key in ('treepath', 'title', 'xlabel', 'ylabel', 'run_id')})
                     reals, imags = expected[component+'_real'], expected[component+'_imag']
                     if len(reals) != len(frequencies) or len(imags) != len(frequencies):
                         raise ValueError('prepared material component lengths disagree')
                     points = []
-                    for index, value in enumerate(values):
+                    actual = dict(zip(grid, values))
+                    missing = [frequency for frequency in frequencies if frequency not in actual]
+                    material_complete &= not missing
+                    for index, frequency in enumerate(frequencies):
+                        if frequency not in actual:
+                            continue
+                        value = actual[frequency]
                         target = complex(_strict_number(reals[index]), _strict_number(imags[index]))
                         difference = abs(value-target)
                         if not math.isfinite(difference):
@@ -691,19 +781,30 @@ def canonicalize_raw_results(raw, profile, case, model_report, out_dir):
                         matched = difference <= atol + rtol*abs(target)
                         material_matched &= matched
                         material_report['max_absolute_error'] = max(material_report['max_absolute_error'], difference)
-                        points.append({'frequency_Hz': frequencies[index], 'actual_real': value.real, 'actual_imag': value.imag,
+                        points.append({'frequency_Hz': frequency, 'actual_real': value.real, 'actual_imag': value.imag,
                                        'expected_real': target.real, 'expected_imag': target.imag,
                                        'absolute_error': difference, 'within_declared_tolerance': matched})
-                    material_report['components'][component] = {'treepath': source['treepath'], 'title': source['title'],
-                                                                 'xlabel': source['xlabel'], 'ylabel': source['ylabel'],
-                                                                 'run_id': source['run_id'], 'points': points}
-                material_report['matched'] = material_matched
-                material_report['comparison_complete'] = True
+                    component_report.update(points=points, missing_frequencies_Hz=missing)
+                    material_report['components'][component] = component_report
+                material_report['matched'] = material_matched if material_complete else None
+                material_report['comparison_complete'] = material_complete
+                complete &= material_complete
                 all_match &= material_matched
-            fit_report['status'] = 'profile_declared_fit_matches_samples' if all_match else 'fit_sample_mismatch'
+            if roles != {'fitted_response'}:
+                fit_report['source_role'] = 'profile_declared_fd_interpolated_response' if roles == {'fd_interpolated_response'} else 'profile_declared_mixed_material_response'
+                receipt['unresolved_gates'].append('material_fit_readback')
+            fit_report['comparison_complete'] = complete
+            fit_report['status'] = ('fit_sample_mismatch' if not all_match and roles == {'fitted_response'}
+                                    else 'material_sample_mismatch' if not all_match
+                                    else 'material_sample_coverage_incomplete' if not complete
+                                    else 'profile_declared_fit_matches_samples' if roles == {'fitted_response'}
+                                    else 'profile_declared_fd_interpolation_matches_samples' if roles == {'fd_interpolated_response'}
+                                    else 'profile_declared_material_responses_match_samples')
             (out / 'material-fit-readback.json').write_text(json.dumps(fit_report, indent=2, ensure_ascii=False,
                                                                       allow_nan=False), encoding='utf-8')
             receipt['artifacts'].append('material-fit-readback.json')
+            if not complete:
+                raise _IdentityUnresolved('material_sample_coverage', 'actual material responses lack exact planned samples; interpolation is forbidden')
             if not all_match:
                 raise ValueError('declared fitted response differs from prepared samples beyond tolerances')
         _write_csv(out / 'spectra.csv', list(spectra[0]), spectra)
@@ -714,6 +815,7 @@ def canonicalize_raw_results(raw, profile, case, model_report, out_dir):
         if isinstance(exc, _IdentityUnresolved):
             receipt['unresolved_gates'].append(exc.gate)
         receipt['errors'].append({'type': type(exc).__name__, 'message': str(exc)})
+    receipt['unresolved_gates'] = list(dict.fromkeys(receipt['unresolved_gates']))
     receipt['artifact_sha256'] = {name: hashlib.sha256((out / name).read_bytes()).hexdigest()
                                   for name in receipt['artifacts'] if name != 'mapping-receipt.json'}
     (out / 'mapping-receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False,

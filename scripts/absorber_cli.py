@@ -63,7 +63,8 @@ def parser():
     cli = argparse.ArgumentParser(description=(
         "Offline CST absorber preview: planning, CSV analysis and plots are available. "
         "Live CST run/resume are experimental and require explicit authorization, exclusive resources "
-        "and acceptance-run or an explicit result profile; native acceptance remains not_run."))
+        "and acceptance-run or an explicit result profile; the native end-to-end trial failed "
+        "and the current preview remains unqualified."))
     sub = cli.add_subparsers(dest="command", required=True)
     for command in ["validate", "plan", "prepare-cst", "run", "resume"]:
         command_parser = sub.add_parser(command)
@@ -130,10 +131,33 @@ def dispatch(args):
         profile = read_json(args.result_profile) if args.result_profile is not None else None
         plan = prepared_plan(args.config)
         from cst_absorber.backend import CstBackend
-        from cst_absorber.runtime import run_cases
+        from cst_absorber.runtime import RunSupervisor, run_cases
         worker = CstBackend(authorized=True, exclusive_resources=True,
                             acceptance_run=args.acceptance_run, result_profile=profile)
-        result = run_cases(plan, args.out_dir.resolve(), worker, resume=args.command == "resume")
+        # A bounded controller return does not permit interpreter exit while
+        # a native startup, request or owned close can still finish late.
+        native_supervision = (callable(getattr(worker, "supervision_status", None))
+                              and callable(getattr(worker, "supervise_cleanup", None)))
+        supervisor = RunSupervisor() if native_supervision else None
+        seen_warning = None
+        def supervision_update(snapshot):
+            nonlocal seen_warning
+            if snapshot.get("requires_user_intervention") and snapshot.get("reason") != seen_warning:
+                seen_warning = snapshot["reason"]
+                print("CST supervision remains active: " + seen_warning +
+                      ". Keep this interpreter open until owned closure is verified.",
+                      file=sys.stderr, flush=True)
+        options = {"resume": args.command == "resume"}
+        if supervisor is not None:
+            options["supervisor"] = supervisor
+        supervision = None
+        try:
+            result = run_cases(plan, args.out_dir.resolve(), worker, **options)
+        finally:
+            if supervisor is not None and supervisor.started:
+                supervision = supervisor.wait(worker, on_update=supervision_update)
+        if supervision is not None:
+            result.update(supervision=supervision, exit_ready=supervision["exit_ready"])
         receipt = getattr(worker, "last_receipt", None)
         if isinstance(receipt, dict):
             result["backend_receipt"] = receipt

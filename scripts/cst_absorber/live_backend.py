@@ -1,7 +1,7 @@
 """Executable, explicitly admitted CST SDK chain; native acceptance is separate.
 
-The current development task runs this only with injected interfaces. The default
-transport imports CST lazily after authorization and exclusive-resource admission.
+Offline tests use injected interfaces. The default transport imports CST lazily
+after authorization and exclusive-resource admission.
 Neither synthetic tests nor completion of a solver call certify numerical accuracy.
 """
 from __future__ import annotations
@@ -54,7 +54,58 @@ class ExecutableCstBackend:
         self._session = None
         self._attempt = None
         self._close_attempted = False
+        self._run_in_progress = False
+        self._session_creation_pending = False
+        self._session_created = False
         self.last_receipt = None
+
+    def supervision_status(self):
+        """Observe transport lifetime without treating an unknown reply as absent."""
+        pending = self._run_in_progress or self._session_creation_pending
+        status = {'worker_pending': self._run_in_progress,
+                  'request_pending': pending,
+                  'session_creation_pending': self._session_creation_pending,
+                  'session_created': self._session_created, 'owned_closed': False}
+        if self._session is None:
+            unknown = self._session_created == 'unknown'
+            status['session_creation_pending'] = status['session_creation_pending'] or unknown
+            status['owned_closed'] = self._session_created is False and not pending
+            return status
+        query = getattr(self._session, 'supervision_status', None)
+        try:
+            observed = query() if callable(query) else None
+            if not isinstance(observed, dict):
+                raise ValueError('transport supervision report unavailable')
+            if any(type(observed.get(key)) is not bool for key in
+                   ('request_pending', 'session_creation_pending', 'owned_closed')):
+                raise ValueError('transport supervision report has invalid pending/closure values')
+            created = observed.get('session_created')
+            if type(created) is not bool and created != 'unknown':
+                raise ValueError('transport supervision creation state is invalid')
+            status.update(observed)
+            status['worker_pending'] = self._run_in_progress
+            status['request_pending'] = observed['request_pending'] or pending
+            status['session_creation_pending'] = observed['session_creation_pending'] or self._session_creation_pending
+            status['owned_closed'] = observed['owned_closed'] and not status['request_pending'] and not status['session_creation_pending']
+        except Exception as error:
+            status.update(request_pending=True, session_created='unknown',
+                          owned_closed=False, reason=str(error))
+        return status
+
+    def supervise_cleanup(self, *, timeout_seconds=10):
+        """Return independent closure evidence; never rewrite the worker receipt."""
+        if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)) or not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+            raise ValueError('cleanup timeout must be finite positive seconds')
+        status = self.supervision_status()
+        if status['worker_pending'] or status['request_pending'] or status['session_creation_pending']:
+            return {'owned_closed': False, 'reason': 'owned worker or transport request remains pending'}
+        if self._session is None:
+            return {'owned_closed': status['session_created'] is False,
+                    'reason': 'no session creation requested' if status['session_created'] is False else 'session creation remains unknown'}
+        cleanup = getattr(self._session, 'supervise_cleanup', None)
+        if not callable(cleanup):
+            return {'owned_closed': False, 'reason': 'transport supervised cleanup unavailable'}
+        return cleanup(timeout_seconds=timeout_seconds)
 
     def ownership(self, attempt_dir):
         if self._session is None or self._attempt is None or Path(attempt_dir).resolve() != self._attempt:
@@ -88,6 +139,15 @@ class ExecutableCstBackend:
         return copy.deepcopy(self.last_receipt)
 
     def __call__(self, case, run_dir, stop_event=None):
+        if self._run_in_progress:
+            raise RuntimeError('native backend is serial and already has an active worker')
+        self._run_in_progress = True
+        try:
+            return self._run_case(case, run_dir, stop_event)
+        finally:
+            self._run_in_progress = False
+
+    def _run_case(self, case, run_dir, stop_event=None):
         if not self.authorized or not self.exclusive_resources:
             return self._denied(case, 'Explicit execution authorization and exclusive resources are required.')
         if not self.acceptance_run and self.result_profile is None:
@@ -101,13 +161,17 @@ class ExecutableCstBackend:
         if (root/'native-run.json').exists():
             raise ValueError('native run already exists; use a fresh controller attempt')
         self._session, self._attempt, self._close_attempted = None, root, False
+        self._session_creation_pending, self._session_created = False, False
         state = {'schema_version':'cst-native-run/1', 'case_id':case.get('id'),
                  'case_signature':case.get('signature'), 'status':'running',
                  'stage':'admission', 'stage_log':[], 'CST_execution':'not_run',
                  'session_created':False, 'backend_evidence':'unknown',
                  'native_acceptance':'not_run', 'numerically_qualified':False,
                  'interruption_acknowledged':False,
-                 'physical_certification':False, 'unresolved_gates':[], 'errors':[]}
+                 'physical_certification':False,
+                 'unresolved_gates':['material_fit_readback', 'reference_plane_readback',
+                                     'solver_cpu_enforcement', 'mesher_thread_enforcement',
+                                     'mesh_edge_unit', 'mesh_edge_freshness'], 'errors':[]}
         deadline = None
         creation_requested = False
         solver_start_requested = False
@@ -136,7 +200,32 @@ class ExecutableCstBackend:
             _write(root/'native-run.json', state)
             checkpoint()
 
+        def archive_checkpoint():
+            nonlocal reason_code
+            verifier = getattr(session, 'verify_archive', None)
+            if not callable(verifier):
+                state['archive_integrity'] = {'status': 'unverified_transport', 'archive_integrity_verified': False}
+                state['unresolved_gates'].append('archive_integrity')
+                return
+            try:
+                report = verifier(timeout_seconds=timeout())
+                if not isinstance(report, dict) or report.get('archive_integrity_verified') is not True:
+                    raise ValueError('transport did not verify the pinned saved archive')
+                state['archive_integrity'] = report
+            except Exception:
+                query = getattr(session, 'archive_integrity', None)
+                try:
+                    report = query() if callable(query) else None
+                except Exception:
+                    report = None
+                state['archive_integrity'] = report if isinstance(report, dict) else {
+                    'status': 'unverified', 'archive_integrity_verified': False}
+                state['unresolved_gates'].append('archive_integrity')
+                reason_code = 'native_archive_integrity_failed'
+                raise
+
         def export_raw():
+            archive_checkpoint()
             adapter = self.result_adapter
             if adapter is None:
                 from . import native_results as adapter
@@ -176,6 +265,7 @@ class ExecutableCstBackend:
                 factory = CstSdkSession
             stage('create_owned_session')
             creation_requested = True
+            self._session_creation_pending, self._session_created = True, 'unknown'
             owned_closed = False
             state['session_created'] = 'unknown'
             try:
@@ -185,7 +275,10 @@ class ExecutableCstBackend:
                 session = getattr(error,'session',None)
                 self._session = session
                 raise
+            finally:
+                self._session_creation_pending = False
             self._session = session
+            self._session_created = True
             state['session_created'] = True
             state['backend_evidence'] = getattr(session,'evidence_kind','unknown_transport')
             checkpoint()
@@ -203,7 +296,7 @@ class ExecutableCstBackend:
             session.execute_vba(model.model_readback_vba(case, root), timeout_seconds=timeout())
             model_report = model.read_model_report(case, root)
             _write(root/'model-readback.json', model_report)
-            state['unresolved_gates'] = list(model_report.get('unresolved_gates',[]))
+            state['unresolved_gates'].extend(model_report.get('unresolved_gates',[]))
             stage('apply_cpu_mesh')
             code = model.resource_mesh_vba(case, runtime, model_report)
             _write(root/'requested-runtime.json',runtime)
@@ -230,7 +323,11 @@ class ExecutableCstBackend:
             state['CST_execution'] = 'solver_finished'
             stage('read_generated_mesh')
             try:
-                session.execute_vba(model.mesh_readback_vba(root),timeout_seconds=timeout())
+                readback = getattr(session, 'execute_readback', None)
+                if callable(readback):
+                    readback(kind='mesh', timeout_seconds=timeout())
+                else:
+                    session.execute_vba(model.mesh_readback_vba(root),timeout_seconds=timeout())
                 mesh_report = model.read_mesh_report(case, root, model_report)
                 _write(root/'mesh-readback.json',mesh_report)
                 threads = mesh_report.get('mesher_threads')
@@ -240,6 +337,8 @@ class ExecutableCstBackend:
                 reason_code = 'native_mesh_validation_failed'
                 raise
             state['unresolved_gates'].extend(mesh_report.get('unresolved_gates',[]))
+            stage('verify_saved_archive')
+            archive_checkpoint()
             stage('save_final_project')
             session.save(include_results=True, timeout_seconds=timeout())
             stage('close_owned_project')
@@ -261,12 +360,15 @@ class ExecutableCstBackend:
                 from .metrics import analyze_exports
                 from .plotting import plot_rl
                 analysis = analyze_exports(case,Path(mapping['spectra_path']),Path(mapping['power_path']))
-                injected = state['backend_evidence'] != 'native_sdk'
+                native = state['backend_evidence'] == 'native_sdk'
+                injected = state['backend_evidence'] == 'injected_test_interface'
                 analysis.update(status='diagnostic_only',quality_state='diagnostic_only',
                                 numerically_qualified=False,native_acceptance='not_run',
                                 solver_evidence=state['backend_evidence'],
-                                CST_execution='not_run_injected_test_interface' if injected else state['CST_execution'])
-                analysis['provenance'].update(export_origin='injected_fixture_project' if injected else 'owned_saved_native_project',
+                                CST_execution=state['CST_execution'] if native else (
+                                    'not_run_injected_test_interface' if injected else 'not_run_unverified_transport'))
+                analysis['provenance'].update(export_origin='owned_saved_native_project' if native else (
+                                                 'injected_fixture_project' if injected else 'unverified_transport_project'),
                                                transmission_source=mapping.get('transmission_source'),
                                                transmission_exported=False,
                                                mapping_evidence='profile_declared_not_native_accepted')
@@ -296,6 +398,7 @@ class ExecutableCstBackend:
                     and not event.is_set() and deadline is not None and time.monotonic()<deadline):
                 try:
                     stage('preserve_failed_solver_project')
+                    archive_checkpoint()
                     session.save(include_results=True,timeout_seconds=timeout())
                     session.close_project(timeout_seconds=timeout())
                     _,raw_export = export_raw()
@@ -320,10 +423,31 @@ class ExecutableCstBackend:
                     state['errors'].append({'type':type(close_error).__name__,'message':str(close_error),'stage':'close_owned_session'})
             elif creation_requested:
                 owned_closed = False
+            if session is not None:
+                # This is cached control-plane evidence, never a new archive pin
+                # or permission to export. Preserve quarantine even when an
+                # earlier stage failed before reaching verify_saved_archive.
+                query = getattr(session, 'archive_integrity', None)
+                try:
+                    archive = query() if callable(query) else None
+                    if isinstance(archive, dict):
+                        state['archive_integrity_at_closure'] = archive
+                        if archive.get('status') == 'quarantined':
+                            state['archive_integrity'] = archive
+                            state['unresolved_gates'].append('archive_integrity')
+                            status = 'failed'
+                            if reason_code != 'native_run_interrupted':
+                                reason_code = 'native_archive_integrity_failed'
+                except Exception as archive_error:
+                    state['unresolved_gates'].append('archive_integrity')
+                    state['errors'].append({'type':type(archive_error).__name__,
+                                            'message':str(archive_error),'stage':'archive_diagnostics'})
             if not owned_closed:
                 status,reason_code = 'failed','owned_closure_unconfirmed'
-            if state['backend_evidence'] == 'injected_test_interface':
-                state['CST_execution'] = 'not_run_injected_test_interface'
+            if state['backend_evidence'] != 'native_sdk' and state['session_created'] is True:
+                state['CST_execution'] = ('not_run_injected_test_interface'
+                                          if state['backend_evidence'] == 'injected_test_interface'
+                                          else 'not_run_unverified_transport')
             state['unresolved_gates'] = sorted(set(state['unresolved_gates']))
             state.update(status=status,reason_code=reason_code,owned_closed=owned_closed,
                          retryable=False,validation='not_run')

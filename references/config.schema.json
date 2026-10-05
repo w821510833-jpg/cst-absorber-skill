@@ -1,0 +1,588 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "execution": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "single",
+            "batch"
+          ],
+          "default": "single"
+        },
+        "confirmed": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "case": {
+      "$ref": "#/$defs/case"
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/case"
+      },
+      "minItems": 1
+    },
+    "runtime": {
+      "$ref": "#/$defs/runtime"
+    }
+  },
+  "required": [
+    "schema_version",
+    "runtime"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Explicit periodic PEC absorber configuration",
+  "$defs": {
+    "cell": {
+      "type": "object",
+      "properties": {
+        "Lx_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "Ly_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "Lx_m",
+        "Ly_m",
+        "height_m"
+      ],
+      "additionalProperties": false
+    },
+    "transform": {
+      "type": "object",
+      "properties": {
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "translation_m": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "brick": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$"
+        },
+        "material": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$"
+        },
+        "kind": {
+          "const": "brick"
+        },
+        "bounds_m": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "id",
+        "material",
+        "kind",
+        "bounds_m"
+      ],
+      "additionalProperties": false
+    },
+    "stl": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$"
+        },
+        "material": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$"
+        },
+        "kind": {
+          "const": "stl"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "source_unit": {
+          "enum": [
+            "m",
+            "mm",
+            "cm"
+          ]
+        },
+        "transform": {
+          "$ref": "#/$defs/transform"
+        }
+      },
+      "required": [
+        "id",
+        "material",
+        "kind",
+        "path",
+        "source_unit"
+      ],
+      "additionalProperties": false
+    },
+    "geometry": {
+      "type": "object",
+      "properties": {
+        "cell": {
+          "$ref": "#/$defs/cell"
+        },
+        "regions": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/brick"
+              },
+              {
+                "$ref": "#/$defs/stl"
+              }
+            ]
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "cell",
+        "regions"
+      ],
+      "additionalProperties": false
+    },
+    "row": {
+      "type": "object",
+      "properties": {
+        "frequency": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "epsilon_real": {
+          "type": "number",
+          "description": "Real part of relative dimensionless permittivity."
+        },
+        "epsilon_imag": {
+          "type": "number",
+          "description": "Imaginary part of relative dimensionless permittivity under the declared time_convention; passive loss is negative for exp(+jωt) and positive for exp(-jωt)."
+        },
+        "mu_real": {
+          "type": "number",
+          "description": "Real part of relative dimensionless permeability."
+        },
+        "mu_imag": {
+          "type": "number",
+          "description": "Imaginary part of relative dimensionless permeability under the declared time_convention."
+        }
+      },
+      "required": [
+        "frequency",
+        "epsilon_real",
+        "epsilon_imag",
+        "mu_real",
+        "mu_imag"
+      ],
+      "additionalProperties": false
+    },
+    "extrapolation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "allowed": {
+              "const": false
+            }
+          },
+          "required": [
+            "allowed"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "allowed": {
+              "const": true
+            },
+            "range_Hz": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "method": {
+              "const": "linear"
+            },
+            "authorization": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            }
+          },
+          "required": [
+            "allowed",
+            "range_Hz",
+            "method",
+            "authorization"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "material": {
+      "type": "object",
+      "properties": {
+        "time_convention": {
+          "enum": [
+            "exp(+jωt)",
+            "exp(-jωt)"
+          ]
+        },
+        "frequency_unit": {
+          "enum": [
+            "Hz",
+            "MHz",
+            "GHz"
+          ]
+        },
+        "epsilon_mu_table": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/row"
+          },
+          "minItems": 2
+        },
+        "measured_ranges_Hz": {
+          "type": "object",
+          "properties": {
+            "epsilon": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "mu": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "epsilon",
+            "mu"
+          ],
+          "additionalProperties": false
+        },
+        "conductivity_S_m": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "Electrical conductivity in S/m, folded once into canonical epsilon unless epsilon_includes_conductivity is true."
+        },
+        "epsilon_includes_conductivity": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the supplied epsilon table already includes conductive loss; true prevents a second sigma contribution."
+        },
+        "density_kg_m3": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Density of this material in kg/m3; omit when unknown, making mapped region mass unavailable."
+        },
+        "extrapolation": {
+          "$ref": "#/$defs/extrapolation"
+        }
+      },
+      "required": [
+        "time_convention",
+        "frequency_unit",
+        "epsilon_mu_table",
+        "measured_ranges_Hz"
+      ],
+      "additionalProperties": false
+    },
+    "scenario": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "const": "periodic-pec"
+        },
+        "frequencies_Hz": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "theta_deg": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 45
+        },
+        "azimuth_deg": {
+          "const": 0
+        },
+        "polarization": {
+          "enum": [
+            "TE",
+            "TM"
+          ]
+        },
+        "air_height_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "reference_plane_m": {
+          "type": "number",
+          "minimum": 0,
+          "description": "SI air offset above the geometry.cell.height_m top face, constrained to 0..air_height_m. Absolute zref=cell.height_m+reference_plane_m; Zmax de-embedding distance=reference_plane_m-air_height_m (nonpositive)."
+        }
+      },
+      "required": [
+        "profile",
+        "frequencies_Hz",
+        "theta_deg",
+        "azimuth_deg",
+        "polarization",
+        "air_height_m",
+        "reference_plane_m"
+      ],
+      "additionalProperties": false
+    },
+    "mesh": {
+      "type": "object",
+      "properties": {
+        "max_edge_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "max_edge_m"
+      ],
+      "additionalProperties": false
+    },
+    "analysis": {
+      "type": "object",
+      "properties": {
+        "band_Hz": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "max_gap_Hz": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "threshold_R": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.1
+        }
+      },
+      "required": [
+        "band_Hz",
+        "max_gap_Hz"
+      ],
+      "additionalProperties": false
+    },
+    "case": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$"
+        },
+        "geometry": {
+          "$ref": "#/$defs/geometry"
+        },
+        "materials": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/material"
+          }
+        },
+        "scenario": {
+          "$ref": "#/$defs/scenario"
+        },
+        "mesh": {
+          "$ref": "#/$defs/mesh"
+        },
+        "analysis": {
+          "$ref": "#/$defs/analysis"
+        }
+      },
+      "required": [
+        "id",
+        "geometry",
+        "materials",
+        "scenario",
+        "mesh",
+        "analysis"
+      ],
+      "additionalProperties": false
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "max_cpus": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "min_available_RAM_GiB": {
+          "type": "number",
+          "minimum": 0
+        },
+        "min_free_disk_GiB": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_modes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "wall_budget_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      "required": [
+        "max_cpus",
+        "min_available_RAM_GiB",
+        "min_free_disk_GiB",
+        "max_modes",
+        "wall_budget_seconds"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$comment": "Python validators additionally check finite numbers, monotonic grids, SI geometry containment, material signs/coverage, unique ids and material mappings. Piecewise interpolation is not causal fitting.",
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "execution"
+        ],
+        "properties": {
+          "execution": {
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "const": "batch"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "cases"
+        ],
+        "not": {
+          "required": [
+            "case"
+          ]
+        },
+        "properties": {
+          "execution": {
+            "required": [
+              "confirmed"
+            ],
+            "properties": {
+              "confirmed": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "case"
+        ],
+        "not": {
+          "required": [
+            "cases"
+          ]
+        }
+      }
+    }
+  ]
+}

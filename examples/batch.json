@@ -1,0 +1,282 @@
+{
+  "schema_version": "1.0",
+  "execution": {
+    "mode": "batch",
+    "confirmed": true
+  },
+  "cases": [
+    {
+      "id": "synthetic-explicit-te",
+      "geometry": {
+        "cell": {
+          "Lx_m": 0.01,
+          "Ly_m": 0.01,
+          "height_m": 0.002
+        },
+        "regions": [
+          {
+            "id": "layer",
+            "material": "a",
+            "kind": "brick",
+            "bounds_m": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0.01,
+                0.01,
+                0.001
+              ]
+            ]
+          },
+          {
+            "id": "upper",
+            "material": "b",
+            "kind": "brick",
+            "bounds_m": [
+              [
+                0,
+                0,
+                0.001
+              ],
+              [
+                0.01,
+                0.01,
+                0.002
+              ]
+            ]
+          }
+        ]
+      },
+      "materials": {
+        "a": {
+          "time_convention": "exp(+jωt)",
+          "frequency_unit": "GHz",
+          "epsilon_mu_table": [
+            {
+              "frequency": 1,
+              "epsilon_real": 2,
+              "epsilon_imag": -0.1,
+              "mu_real": 1,
+              "mu_imag": 0
+            },
+            {
+              "frequency": 2,
+              "epsilon_real": 3,
+              "epsilon_imag": -0.2,
+              "mu_real": 1,
+              "mu_imag": 0
+            }
+          ],
+          "measured_ranges_Hz": {
+            "epsilon": [
+              1000000000.0,
+              2000000000.0
+            ],
+            "mu": [
+              1000000000.0,
+              2000000000.0
+            ]
+          },
+          "density_kg_m3": 1200
+        },
+        "b": {
+          "time_convention": "exp(+jωt)",
+          "frequency_unit": "GHz",
+          "epsilon_mu_table": [
+            {
+              "frequency": 1,
+              "epsilon_real": 4,
+              "epsilon_imag": -0.1,
+              "mu_real": 1,
+              "mu_imag": 0
+            },
+            {
+              "frequency": 2,
+              "epsilon_real": 4.5,
+              "epsilon_imag": -0.2,
+              "mu_real": 1,
+              "mu_imag": 0
+            }
+          ],
+          "measured_ranges_Hz": {
+            "epsilon": [
+              1000000000.0,
+              2000000000.0
+            ],
+            "mu": [
+              1000000000.0,
+              2000000000.0
+            ]
+          },
+          "density_kg_m3": 2400
+        }
+      },
+      "scenario": {
+        "profile": "periodic-pec",
+        "frequencies_Hz": [
+          1000000000.0,
+          1200000000.0,
+          2000000000.0
+        ],
+        "theta_deg": 0,
+        "azimuth_deg": 0,
+        "polarization": "TE",
+        "air_height_m": 0.01,
+        "reference_plane_m": 0.005
+      },
+      "mesh": {
+        "max_edge_m": 0.0005
+      },
+      "analysis": {
+        "band_Hz": [
+          1000000000.0,
+          2000000000.0
+        ],
+        "max_gap_Hz": 800000000.0
+      }
+    },
+    {
+      "id": "synthetic-explicit-tm",
+      "geometry": {
+        "cell": {
+          "Lx_m": 0.01,
+          "Ly_m": 0.01,
+          "height_m": 0.002
+        },
+        "regions": [
+          {
+            "id": "layer",
+            "material": "a",
+            "kind": "brick",
+            "bounds_m": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0.01,
+                0.01,
+                0.001
+              ]
+            ]
+          },
+          {
+            "id": "upper",
+            "material": "b",
+            "kind": "brick",
+            "bounds_m": [
+              [
+                0,
+                0,
+                0.001
+              ],
+              [
+                0.01,
+                0.01,
+                0.002
+              ]
+            ]
+          }
+        ]
+      },
+      "materials": {
+        "a": {
+          "time_convention": "exp(+jωt)",
+          "frequency_unit": "GHz",
+          "epsilon_mu_table": [
+            {
+              "frequency": 1,
+              "epsilon_real": 2,
+              "epsilon_imag": -0.1,
+              "mu_real": 1,
+              "mu_imag": 0
+            },
+            {
+              "frequency": 2,
+              "epsilon_real": 3,
+              "epsilon_imag": -0.2,
+              "mu_real": 1,
+              "mu_imag": 0
+            }
+          ],
+          "measured_ranges_Hz": {
+            "epsilon": [
+              1000000000.0,
+              2000000000.0
+            ],
+            "mu": [
+              1000000000.0,
+              2000000000.0
+            ]
+          },
+          "density_kg_m3": 1200
+        },
+        "b": {
+          "time_convention": "exp(+jωt)",
+          "frequency_unit": "GHz",
+          "epsilon_mu_table": [
+            {
+              "frequency": 1,
+              "epsilon_real": 4,
+              "epsilon_imag": -0.1,
+              "mu_real": 1,
+              "mu_imag": 0
+            },
+            {
+              "frequency": 2,
+              "epsilon_real": 4.5,
+              "epsilon_imag": -0.2,
+              "mu_real": 1,
+              "mu_imag": 0
+            }
+          ],
+          "measured_ranges_Hz": {
+            "epsilon": [
+              1000000000.0,
+              2000000000.0
+            ],
+            "mu": [
+              1000000000.0,
+              2000000000.0
+            ]
+          },
+          "density_kg_m3": 2400
+        }
+      },
+      "scenario": {
+        "profile": "periodic-pec",
+        "frequencies_Hz": [
+          1000000000.0,
+          1200000000.0,
+          2000000000.0
+        ],
+        "theta_deg": 0,
+        "azimuth_deg": 0,
+        "polarization": "TM",
+        "air_height_m": 0.01,
+        "reference_plane_m": 0.005
+      },
+      "mesh": {
+        "max_edge_m": 0.0005
+      },
+      "analysis": {
+        "band_Hz": [
+          1000000000.0,
+          2000000000.0
+        ],
+        "max_gap_Hz": 800000000.0
+      }
+    }
+  ],
+  "runtime": {
+    "max_cpus": 2,
+    "min_available_RAM_GiB": 1,
+    "min_free_disk_GiB": 1,
+    "max_modes": 16,
+    "wall_budget_seconds": 120
+  }
+}

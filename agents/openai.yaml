@@ -1,0 +1,7 @@
+interface:
+  display_name: "CST Absorber Preview"
+  short_description: "Single-case absorber workflow with experimental CST execution"
+  default_prompt: "Use $cst-absorber-skill for this explicitly scoped absorber case. Validate its geometry/material contract, prepare or explicitly admit its experimental CST execution, and analyze actual modal/power exports with reproducible figures. Preserve single-case scope, native-acceptance not_run markers and diagnostic-only limits."
+
+policy:
+  allow_implicit_invocation: true

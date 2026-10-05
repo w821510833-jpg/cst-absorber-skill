@@ -1,0 +1,19 @@
+{
+  "dpi": 300,
+  "font_family": [
+    "DejaVu Sans",
+    "Arial",
+    "sans-serif"
+  ],
+  "font_size": 10,
+  "figsize_inches": [
+    7,
+    4.3
+  ],
+  "linewidth": 1.4,
+  "markersize": 3.3,
+  "total_color": "#0072B2",
+  "fundamental_color": "#D55E00",
+  "zero_floor_dB": null,
+  "pdf": false
+}

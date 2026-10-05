@@ -1,0 +1,4 @@
+# Dependency declaration only. No installer or environment mutation is included.
+numpy>=1.24
+trimesh>=4.0
+matplotlib>=3.7

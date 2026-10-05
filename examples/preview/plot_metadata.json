@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0",
+  "status": "screening_only",
+  "numerically_qualified": false,
+  "title": "synthetic-single | screening_only",
+  "max_gap_Hz": 800000000.0,
+  "threshold_R": 0.1,
+  "material_domains": {
+    "a": {
+      "epsilon": [
+        1000000000.0,
+        2000000000.0
+      ],
+      "mu": [
+        1000000000.0,
+        2000000000.0
+      ]
+    },
+    "b": {
+      "epsilon": [
+        1000000000.0,
+        2000000000.0
+      ],
+      "mu": [
+        1000000000.0,
+        2000000000.0
+      ]
+    }
+  },
+  "source_frequency_axis": "actual CSV export points",
+  "solver_evidence": "not_verified",
+  "ylim_dB": [
+    -22.979400086720375,
+    3
+  ],
+  "xlim_Hz": [
+    980000000.0,
+    2020000000.0
+  ],
+  "segment_count": 1,
+  "dpi": 300,
+  "zero_display_floor_dB": -19.979400086720375,
+  "zero_floor_policy": "auto_below_finite_minimum",
+  "zero_floor_definition": "display-only position for exact zero; finite minimum minus max(6 dB, 20% of finite span) when automatic",
+  "domain_label_placement": "outside_plot_footer",
+  "domain_label_bbox_figure": [
+    0.08956396825396826,
+    0.03426948964497047,
+    0.5247425396825397,
+    0.15370458579881663
+  ],
+  "plot_bbox_figure": [
+    0.08956396825396826,
+    0.25295800460223544,
+    0.9940471428571428,
+    0.9490378205128206
+  ],
+  "versions": {
+    "python": "3.12.7",
+    "matplotlib": "3.10.8"
+  },
+  "gap_policy": "break between adjacent frequencies separated by more than max_gap_Hz",
+  "svg_editability": "text retained as text; curves are vector paths",
+  "zero_policy": "null RL for exact zero; triangle at labeled display floor; raw CSV unchanged"
+}

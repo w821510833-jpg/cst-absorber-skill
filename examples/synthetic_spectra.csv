@@ -1,0 +1,7 @@
+frequency_Hz,m,n,polarization,s_re,s_im,gamma_re_per_m,gamma_im_per_m,normalization,data_origin
+1000000000,0,0,TE,0,0.4472135954999579,0,20.958450219516816,power,synthetic_demo_not_CST
+1000000000,0,0,TM,0,0,0,20.958450219516816,power,synthetic_demo_not_CST
+1200000000,0,0,TE,0,0.2,0,25.15014026342018,power,synthetic_demo_not_CST
+1200000000,0,0,TM,0,0,0,25.15014026342018,power,synthetic_demo_not_CST
+2000000000,0,0,TE,0,0,0,41.91690043903363,power,synthetic_demo_not_CST
+2000000000,0,0,TM,0,0,0,41.91690043903363,power,synthetic_demo_not_CST

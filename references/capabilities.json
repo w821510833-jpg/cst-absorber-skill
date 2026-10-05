@@ -1,0 +1,69 @@
+{
+  "version": "0.2.1-preview",
+  "release_type": "experimental-executable-preview",
+  "scope": "periodic-pec-single-or-explicit-batch",
+  "single_case_default": true,
+  "implicit_expansion": false,
+  "live_CST_execution": "implemented_explicitly_admitted_native_acceptance_not_run",
+  "real_CST_acceptance": "not_run",
+  "numerical_certification": false,
+  "profiles": {
+    "periodic-pec": "offline_contract_analysis_and_experimental_executor",
+    "two-port-transmission": "unsupported",
+    "anisotropic-material": "unsupported",
+    "surface-impedance": "unsupported",
+    "finite-RCS": "unsupported"
+  },
+  "geometry": {
+    "brick_regions": "offline_audited",
+    "closed_single_shell_STL": "offline_audited_with_limits",
+    "STL_self_intersection": "unverified",
+    "intersecting_STL_bounding_boxes": "unverified",
+    "multi_material_CST_mapping": "not_run",
+    "TPMS_generator": "not_included",
+    "native_volume_tolerance": "scale_relative_without_fixed_SI_absolute_floor"
+  },
+  "materials": {
+    "isotropic_frequency_tables": "offline_sampled",
+    "conductivity": "folded_once_into_canonical_epsilon",
+    "material_fit_readback": "not_run",
+    "density_and_region_mass": "available_when_density_is_declared"
+  },
+  "runtime": {
+    "injected_worker_controller": "offline_tested",
+    "owned_process_action": "implemented_single_owned_PID_observer_injected_tests_only",
+    "live_CST_cleanup": "not_run",
+    "solver_CPU_limit_enforcement": "documented_settings_implemented_native_not_run",
+    "pending_SDK_request": "no_concurrent_mutation_closure_unconfirmed_retains_lock",
+    "pause_resume": "explicit_after_lock_content_and_owned_closure_validation"
+  },
+  "analysis": {
+    "Gamma_contract": "exp(-Gamma*z), inverse_metre",
+    "actual_CST_Gamma_units": "unverified",
+    "modal_power_normalization": "asserted_CSV_contract_checked_against_power",
+    "actual_CST_export_normalization": "unverified",
+    "result_status": "screening_only",
+    "real_frequencies_and_complex_S_retained": true,
+    "band_metrics": "sampled_piecewise_linear_with_gap_policy"
+  },
+  "figures": [
+    "PNG_at_least_300_dpi",
+    "editable_SVG",
+    "processed_CSV",
+    "standalone_Python",
+    "style_and_versions"
+  ],
+  "execution_implemented": true,
+  "software_verification": "injected_interfaces_only",
+  "native_adapter": {
+    "fresh_session_history_solver_export_closure": "implemented_injected_tested",
+    "result_mapping": "exact_profile_declared_diagnostic_only",
+    "reference_plane_readback": "unresolved",
+    "material_fit_readback": "profile_mapped_curves_supported_native_not_run",
+    "mesh_edge_unit_and_freshness": "unresolved",
+    "acceptance_run_success": "failed_native_validation_pending",
+    "certification": false,
+    "excitation_identity": "actual_incident_matrix_column_and_same_power_branch_required",
+    "contradictory_raw_curves": "preserved_invalid_and_excluded_from_analysis"
+  }
+}

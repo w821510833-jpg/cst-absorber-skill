@@ -1,0 +1,4 @@
+frequency_Hz,R,R00,RLtotal_dB,RL00_dB,zero_R,zero_R00,material_domain
+1000000000.0,0.19999999999999998,0.19999999999999998,-6.989700043360188,-6.989700043360188,False,False,a:epsilon:measured;a:mu:measured;b:epsilon:measured;b:mu:measured
+1200000000.0,0.04000000000000001,0.04000000000000001,-13.979400086720375,-13.979400086720375,False,False,a:epsilon:measured;a:mu:measured;b:epsilon:measured;b:mu:measured
+2000000000.0,0.0,0.0,,,True,True,a:epsilon:measured;a:mu:measured;b:epsilon:measured;b:mu:measured

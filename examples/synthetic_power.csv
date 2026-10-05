@@ -1,0 +1,4 @@
+frequency_Hz,incident_W,reflected_W,absorbed_W,transmitted_W,data_origin
+1000000000,2,0.4,1.6,0,synthetic_demo_not_CST
+1200000000,2,0.08,1.92,0,synthetic_demo_not_CST
+2000000000,2,0,2,0,synthetic_demo_not_CST

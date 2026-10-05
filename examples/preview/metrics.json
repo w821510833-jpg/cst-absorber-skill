@@ -1,0 +1,245 @@
+{
+  "schema_version": "1.0",
+  "case_id": "synthetic-single",
+  "status": "screening_only",
+  "quality_state": "screening_only",
+  "numerically_qualified": false,
+  "execution_verified_by_analyzer": false,
+  "solver_evidence": "not_verified",
+  "frequency_Hz": [
+    1000000000.0,
+    1200000000.0,
+    2000000000.0
+  ],
+  "R": [
+    0.19999999999999998,
+    0.04000000000000001,
+    0.0
+  ],
+  "R00": [
+    0.19999999999999998,
+    0.04000000000000001,
+    0.0
+  ],
+  "A": [
+    0.8,
+    0.96,
+    1.0
+  ],
+  "T": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "T_source": "independent_export_checked_against_pec_boundary",
+  "T_boundary": 0.0,
+  "T_boundary_source": "PEC_boundary_assumption",
+  "RLtotal_dB": [
+    -6.989700043360188,
+    -13.979400086720375,
+    null
+  ],
+  "RL00_dB": [
+    -6.989700043360188,
+    -13.979400086720375,
+    null
+  ],
+  "zero_R": [
+    false,
+    false,
+    true
+  ],
+  "zero_R00": [
+    false,
+    false,
+    true
+  ],
+  "RL00_definition": "total fundamental reflected power, including cross polarization",
+  "points": [
+    {
+      "frequency_Hz": 1000000000.0,
+      "R": 0.19999999999999998,
+      "R00": 0.19999999999999998,
+      "A": 0.8,
+      "T": 0.0,
+      "power_closure_residual": 0.0
+    },
+    {
+      "frequency_Hz": 1200000000.0,
+      "R": 0.04000000000000001,
+      "R00": 0.04000000000000001,
+      "A": 0.96,
+      "T": 0.0,
+      "power_closure_residual": 0.0
+    },
+    {
+      "frequency_Hz": 2000000000.0,
+      "R": 0.0,
+      "R00": 0.0,
+      "A": 1.0,
+      "T": 0.0,
+      "power_closure_residual": 0.0
+    }
+  ],
+  "analysis": {
+    "band_Hz": [
+      1000000000.0,
+      2000000000.0
+    ],
+    "max_gap_Hz": 800000000.0,
+    "threshold_R": 0.1
+  },
+  "metrics": {
+    "band_Hz": [
+      1000000000.0,
+      2000000000.0
+    ],
+    "fully_covered": true,
+    "coverage_fraction": 1.0,
+    "covered_width_Hz": 1000000000.0,
+    "invalid_gaps_Hz": [],
+    "average_R": 0.04,
+    "average_RL_dB": -13.979400086720375,
+    "average_RL_definition": "10*log10(average_R); not the average of dB samples",
+    "average_zero_R": false,
+    "threshold_R": 0.1,
+    "threshold_intervals_Hz": [
+      [
+        1125000000.0,
+        2000000000.0
+      ]
+    ],
+    "width_scope": "covered_intervals_only",
+    "total_threshold_width_Hz": 875000000.0,
+    "longest_threshold_width_Hz": 875000000.0,
+    "sampled_min_R": 0.0,
+    "sampled_min_frequency_Hz": 2000000000.0,
+    "sampled_min_RL_dB": null,
+    "sampled_min_zero_R": true,
+    "minimum_kind": "sampled_only",
+    "average_A": 0.96,
+    "average_A_definition": "piecewise-linear integral of exported absorbed_W / incident_W, normalized by full band width; withheld if incomplete"
+  },
+  "provenance": {
+    "modal_rows": [
+      {
+        "frequency_Hz": 1000000000.0,
+        "m": 0,
+        "n": 0,
+        "s_re": 0.0,
+        "s_im": 0.4472135954999579,
+        "gamma_re_per_m": 0.0,
+        "gamma_im_per_m": 20.958450219516816,
+        "polarization": "TE",
+        "normalization": "power",
+        "physical_state": "propagating"
+      },
+      {
+        "frequency_Hz": 1000000000.0,
+        "m": 0,
+        "n": 0,
+        "s_re": 0.0,
+        "s_im": 0.0,
+        "gamma_re_per_m": 0.0,
+        "gamma_im_per_m": 20.958450219516816,
+        "polarization": "TM",
+        "normalization": "power",
+        "physical_state": "propagating"
+      },
+      {
+        "frequency_Hz": 1200000000.0,
+        "m": 0,
+        "n": 0,
+        "s_re": 0.0,
+        "s_im": 0.2,
+        "gamma_re_per_m": 0.0,
+        "gamma_im_per_m": 25.15014026342018,
+        "polarization": "TE",
+        "normalization": "power",
+        "physical_state": "propagating"
+      },
+      {
+        "frequency_Hz": 1200000000.0,
+        "m": 0,
+        "n": 0,
+        "s_re": 0.0,
+        "s_im": 0.0,
+        "gamma_re_per_m": 0.0,
+        "gamma_im_per_m": 25.15014026342018,
+        "polarization": "TM",
+        "normalization": "power",
+        "physical_state": "propagating"
+      },
+      {
+        "frequency_Hz": 2000000000.0,
+        "m": 0,
+        "n": 0,
+        "s_re": 0.0,
+        "s_im": 0.0,
+        "gamma_re_per_m": 0.0,
+        "gamma_im_per_m": 41.91690043903363,
+        "polarization": "TE",
+        "normalization": "power",
+        "physical_state": "propagating"
+      },
+      {
+        "frequency_Hz": 2000000000.0,
+        "m": 0,
+        "n": 0,
+        "s_re": 0.0,
+        "s_im": 0.0,
+        "gamma_re_per_m": 0.0,
+        "gamma_im_per_m": 41.91690043903363,
+        "polarization": "TM",
+        "normalization": "power",
+        "physical_state": "propagating"
+      }
+    ],
+    "power_rows": [
+      {
+        "frequency_Hz": 1000000000.0,
+        "incident_W": 2.0,
+        "reflected_W": 0.4,
+        "absorbed_W": 1.6,
+        "transmitted_W": 0.0
+      },
+      {
+        "frequency_Hz": 1200000000.0,
+        "incident_W": 2.0,
+        "reflected_W": 0.08,
+        "absorbed_W": 1.92,
+        "transmitted_W": 0.0
+      },
+      {
+        "frequency_Hz": 2000000000.0,
+        "incident_W": 2.0,
+        "reflected_W": 0.0,
+        "absorbed_W": 2.0,
+        "transmitted_W": 0.0
+      }
+    ],
+    "spectra_sha256": "9b8555504a83bbc29448fa2ada5af060ac41c3f9beb1a885a373599fee445bb2",
+    "power_sha256": "1787266f0aabb27590eb3a6d40949976866b30cfdc8d93f2d2799cebe09728f8",
+    "incident_polarization": "TE",
+    "power_tolerance": 1e-06,
+    "gamma_relative_tolerance": 1e-06,
+    "gamma_absolute_tolerance_per_m": 1e-08,
+    "scope": "file analysis only; solver origin and convergence are not verified",
+    "gamma_convention": "exp(-Gamma*z); abs(imag Gamma)=vacuum kz",
+    "required_modes": [
+      {
+        "m": 0,
+        "n": 0,
+        "polarization": "TE"
+      },
+      {
+        "m": 0,
+        "n": 0,
+        "polarization": "TM"
+      }
+    ],
+    "export_origin": "synthetic",
+    "export_origin_verified": false
+  },
+  "CST_execution": "not_run"
+}

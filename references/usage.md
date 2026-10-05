@@ -35,6 +35,21 @@ deembedding distance is `reference_plane_m - air_height_m` (nonpositive for a
 reference plane within that air span). Actual complex-S reference-plane readback and a phase benchmark remain
 unresolved. This repair was not rerun in CST.
 
+Mesh input separates a nominal sizing target from measured acceptance:
+
+```json
+{"mesh":{"target_edge_m":0.001,"acceptance_max_edge_m":0.001}}
+```
+
+`acceptance_max_edge_m` is optional; omitting it declares no numeric measured
+ceiling and still grants no native qualification. Legacy `max_edge_m` preserves
+its case identity and means both the nominal target and the strict measured
+ceiling. Do not mix legacy and new keys. Unstructured tetrahedral cell-size
+controls do not guarantee a hard edge upper bound. The original 1 mm legacy
+trial remains failed at an observed 1.16412 mm under the documented unit/freshness
+limitation. Reports retain raw values and separate unknown units/freshness;
+acceptance is never automatically relaxed to an observed oversized edge.
+
 `prepare-cst` emits original configuration and acceptance artifacts only,
 with numbered output folders and case IDs in receipts; it neither launches CST nor
 claims the solver API, importer or material mapping has passed real acceptance.

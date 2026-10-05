@@ -602,7 +602,21 @@ class NativeSdkArchiveTests(unittest.TestCase):
                 gate.wait(1)
             return original_filename()
         self.h.project.filename = filename
-        with mock.patch.object(native_sdk.time, "monotonic", return_value=0.):
+        original_event = threading.Event
+        events = [0]
+        class CallerTimeoutAtFilename(original_event):
+            def wait(self, timeout=None):
+                # Fail the completion wait only after the named filename
+                # callback was entered; OS scheduling cannot pick a different
+                # race while the mocked clock still shows budget remaining.
+                if not entered.wait(2):
+                    raise AssertionError("save did not reach the named filename gate")
+                return False
+        def event_factory(*args, **kwargs):
+            events[0] += 1
+            return CallerTimeoutAtFilename(*args, **kwargs) if events[0] == 3 else original_event(*args, **kwargs)
+        with mock.patch.object(native_sdk.time, "monotonic", return_value=0.), \
+                mock.patch.object(threading, "Event", side_effect=event_factory):
             with self.assertRaises(native_sdk.SessionTimeout):
                 self.session.save(timeout_seconds=.05)
             self.assertTrue(entered.is_set())

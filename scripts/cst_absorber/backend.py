@@ -15,14 +15,14 @@ import re
 
 _BLOCKERS = {
     'material_fit_readback': 'Repaired-version material acceptance and solver linkage are unresolved; the prior synthetic Fit deviated.',
-    'native_geometry_readback': 'Imported shapes, materials, volumes and bounds have not been verified in CST.',
+    'native_geometry_readback': 'The 0.2.2 trial checked one single synthetic brick; imported shapes and other geometry/material mappings remain unverified.',
     'cell_domain_origin_readback': 'The native calculation-domain origin and explicit lattice have not been read back.',
     'reference_plane_readback': 'The native Zmax deembedding plane and complex phase have not been verified.',
-    'native_mesh_max_edge': 'A native API enforcing the requested maximum edge length has not been verified.',
+    'native_mesh_max_edge': 'Native unstructured sizing is nominal; the 0.2.2 observed edge exceeded its legacy measured ceiling under an unverified unit assumption. Units, freshness and independent measured acceptance remain unresolved.',
     'gamma_units': 'Actual Floquet Gamma labels, units and propagation convention have not been verified.',
     'floquet_power_normalization': 'The native complex Floquet S export has not been verified as power-normalized.',
     'independent_power_closure': 'Actual stimulated, outgoing, accepted and material loss curves have not been reconciled.',
-    'owned_session_lifecycle': 'Prior automated native lifecycle failed; the repaired lifecycle has not been rerun in CST.',
+    'owned_session_lifecycle': 'The 0.2.2 trial reached solver SUCCESS and automatic owned closure, but archive and mesh checks failed; the current candidate has not been rerun in CST.',
 }
 
 
@@ -92,7 +92,8 @@ def _check_case(case: dict) -> tuple[dict, dict, list]:
     reference_offset = _number(scenario.get('reference_plane_m'))
     if not 0 <= reference_offset <= air_height:
         raise ValueError('reference plane must be within the air region above the cell')
-    _number(case.get('mesh', {}).get('max_edge_m'), positive=True)
+    from .contracts import resolve_mesh_policy
+    resolve_mesh_policy(case.get('mesh', {}))
     geometry = case.get('geometry', {})
     cell = geometry.get('cell', {})
     for key in ('Lx_m', 'Ly_m', 'height_m'):
@@ -203,7 +204,7 @@ def _setup(case: dict, modes: list[dict], audit: dict) -> str:
               _line('ForceLegacyPhaseReference', 'False'), 'End With',
               'Mesh.SetCreator "High Frequency"', 'Mesh.MeshType "Tetrahedral"',
               'ChangeSolverType "HF Frequency Domain"',
-              "' Requested max_edge_m is in expected_geometry.json; enforcement requires native API validation.",
+              "' Nominal mesh sizing and independent measured acceptance are in expected_geometry.json.",
               'With FDSolver', _line('Reset'), _line('SetMethod', 'Tetrahedral', 'Discrete samples only'),
               _line('Stimulation', 'List', 'List'), _line('ResetExcitationList'),
               _line('AddToExcitationList', 'Zmax', scenario['polarization'] + '(0,0)'),
@@ -330,6 +331,8 @@ def prepare_cst(case: dict, out_dir: Path) -> dict:
     """
     audit, samples, frequencies = _check_case(case)
     _verify_prepared(case)
+    from .contracts import resolve_mesh_policy
+    mesh_policy = resolve_mesh_policy(case['mesh'])
     from .modal import required_modes
     modes = required_modes(case)
     geometry, assets = _stage_geometry(case, audit)
@@ -341,7 +344,13 @@ def prepare_cst(case: dict, out_dir: Path) -> dict:
                 'cell_m': case['geometry']['cell'], 'calculation_domain_m': [[0, 0, 0],
                     [case['geometry']['cell']['Lx_m'], case['geometry']['cell']['Ly_m'],
                      case['geometry']['cell']['height_m'] + case['scenario']['air_height_m']]],
-                'mesh_max_edge_m': case['mesh']['max_edge_m'],
+                'mesh_policy': {**mesh_policy,
+                    'sizing_semantics': 'nominal_unstructured_cell_target',
+                    'native_hard_upper_bound_guaranteed': False,
+                    'measurement_acceptance_required': mesh_policy['acceptance_max_edge_m'] is not None,
+                    'measurement_acceptance_status': 'not_run',
+                    'measurement_units_verified': False,
+                    'measurement_freshness_verified': False},
                 'reference_plane': {'convention': 'air offset above geometry.cell.height_m',
                     'zref_m': case['geometry']['cell']['height_m'] + case['scenario']['reference_plane_m'],
                     'zport_m': case['geometry']['cell']['height_m'] + case['scenario']['air_height_m'],
@@ -355,8 +364,11 @@ def prepare_cst(case: dict, out_dir: Path) -> dict:
                   'gamma_export_unit': None, 'material_model': 'native_frequency_table_and_nth_order_fit_candidate',
                   'material_fit_exact_table_interpolation': False,
                   'material_solver_policy': {'requested_TDCompatibleMaterials': False,
-                      'documented_table_treatment': 'linear_interpolation_when_TD_fit_disabled',
+                      'documented_table_treatment': 'volumetric_response_undocumented',
+                      'documented_setting_scope': ['constant_tangent_delta_materials',
+                          'broadband_surface_impedance_materials'],
                       'native_setting_readback': 'unavailable_public_getter',
+                      'native_setting_verified': False,
                       'solver_response_linkage': 'unverified'},
                   'material_response_source_roles': {'Data list': 'original_table',
                       'FD - Interpolated': 'fd_interpolated_response',

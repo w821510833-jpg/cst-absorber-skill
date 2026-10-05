@@ -17,8 +17,11 @@ close) keeps the complete owned process/object/path/filename boundary. Its
 archive may be mutable. Content operations instead require the explicitly
 saved inode and stable SHA256 snapshot; a solver-time replacement is quarantined
 without assuming CST was its writer. Successful closure is not archive or
-physics acceptance. Only a successful, bounded explicit SDK save can commit a
-new pin. Native asynchronous writer attribution remains unresolved.
+physics acceptance. A bounded explicit SDK save, or the separate documented
+blocking solver/post-processing plus explicit save protocol, can commit a new
+pin only after caller acceptance. These are explicit SDK operation trust
+boundaries, not proof of filesystem writer identity or durable completion.
+Native asynchronous writer attribution remains unresolved.
 """
 from __future__ import annotations
 
@@ -160,10 +163,14 @@ class CstSdkSession:
         self._project_save_attempted = self._project_location_bound = False
         self._saved_file_identity = None
         self._saved_file_digest = None
+        self._archive_writer_token = None
+        self._archive_write_trace = []
         self._archive = {"state": "unsaved", "status": "unsaved",
                          "archive_integrity_verified": False,
                          "writer_attribution": "unresolved"}
         self._readback_outputs = {}
+        self._material_readback_outputs = {}
+        self._material_readback_nonces = set()
         self._owned_closed = False
         self._confirmed_close = None
         self._last_close = self._receipt(False, "environment not yet closed")
@@ -426,6 +433,36 @@ class CstSdkSession:
         """
         return copy.deepcopy(self._archive)
 
+    def archive_write_trace(self):
+        """Copy cached operation observations without SDK or filesystem work."""
+        with self._state_lock:
+            return copy.deepcopy(self._archive_write_trace)
+
+    def _append_archive_write_event(self, event, trace):
+        # The request worker/caller holds _state_lock. Keep diagnostics bounded
+        # even if this session is used for several explicit sequential runs.
+        trace.append(event)
+        self._archive_write_trace.append(event)
+        del self._archive_write_trace[:-512]
+
+    def _archive_write_observation(self, operation_id, stage, phase, trace, *, snapshot=None):
+        """Observe an operation boundary; never accept or attribute its bytes."""
+        event = {"operation_id": operation_id, "stage": stage, "phase": phase,
+                 "observed_at_monotonic": time.monotonic(),
+                 "archive_status": self._archive["state"], "observed_identity": None}
+        try:
+            if snapshot is None:
+                self._check_path()
+                identity = self._file_identity()
+            else:
+                identity, digest = snapshot
+                event["sha256"] = digest
+            event.update(observation="regular_file", observed_identity=list(identity))
+        except (OSError, SessionSafetyError) as error:
+            event.update(observation="unavailable", reason=str(error))
+        with self._state_lock:
+            self._append_archive_write_event(event, trace)
+
     def _quarantine_archive(self, reason, observed_identity=None):
         if self._archive["state"] != "quarantined":
             self._archive.update(state="quarantined", status="quarantined",
@@ -564,13 +601,20 @@ class CstSdkSession:
                 raise SessionSafetyError("owned saved project file was replaced")
             if digest != self._saved_file_digest:
                 raise SessionSafetyError("owned saved project content changed without an explicit checked save")
-        except SessionCancelled:
+        except (SessionCancelled, SessionTimeout):
             raise
         except (OSError, SessionSafetyError) as error:
             self._quarantine_archive(str(error))
             raise SessionSafetyError("owned archive quarantined: " + str(error)) from error
-        self._archive["archive_integrity_verified"] = True
-        self._archive["verification_scope"] = "last_successful_strict_snapshot"
+        # Snapshot callbacks may finish after their caller rejected the request.
+        # Never let that late read turn sticky quarantine back into verified.
+        with self._state_lock:
+            if deadline is not None:
+                self._deadline(deadline, allow_cancelled=allow_cancelled)
+            if self._archive["state"] == "quarantined":
+                raise SessionSafetyError("owned archive quarantined: " + self._archive["reason"])
+            self._archive["archive_integrity_verified"] = True
+            self._archive["verification_scope"] = "last_successful_strict_snapshot"
         return self.archive_integrity()
 
     def verify_archive(self, timeout_seconds=DEFAULT_REQUEST_SECONDS):
@@ -605,8 +649,12 @@ class CstSdkSession:
     def save(self, include_results=True, timeout_seconds=DEFAULT_REQUEST_SECONDS):
         if type(include_results) is not bool:
             raise SessionSafetyError("include_results must be boolean")
-        old_identity, old_digest, old_saved = self._saved_file_identity, self._saved_file_digest, self._saved
+        old_pin = None
         def save_owned(deadline):
+            nonlocal old_pin
+            with self._state_lock:
+                self._deadline(deadline)
+                old_pin = (self._saved_file_identity, self._saved_file_digest, self._saved)
             environment = self._held_de
             project = self._project_guard(deadline=deadline)
             self._require_held_objects(environment, project)
@@ -665,7 +713,8 @@ class CstSdkSession:
             self._saved_file_identity, self._saved_file_digest = identity, digest
             self._saved, self._archive = True, archive
         def reject():
-            self._saved_file_identity, self._saved_file_digest, self._saved = old_identity, old_digest, old_saved
+            if old_pin is not None:
+                self._saved_file_identity, self._saved_file_digest, self._saved = old_pin
             self._quarantine_archive("explicit SDK save was not accepted by its caller; new archive was not committed")
         return self._request("save", save_owned, timeout_seconds, on_accept=accept, on_reject=reject)
 
@@ -717,12 +766,353 @@ class CstSdkSession:
             return {"kind": kind, "sdk_return": result, "archive_integrity": self.archive_integrity()}
         return self._request("trusted-readback-" + kind, read, timeout_seconds)
 
+    def execute_material_readback(self, case, operation_id, timeout_seconds=DEFAULT_REQUEST_SECONDS):
+        """Execute only fixed formal material getters and bind their output.
+
+        A caller supplies a case and fresh identifier, never VBA or a path.
+        This receipt establishes the exact owned request/nonce/hash boundary;
+        parameter validation and solver-response linkage remain separate gates.
+        Rejected late output never acquires owned-output publication rights.
+        """
+        def read(deadline):
+            from . import native_materials
+            frozen_case = copy.deepcopy(case)
+            code = native_materials.material_readback_vba(frozen_case, self.run_dir, operation_id=operation_id)
+            signature = frozen_case["signature"]
+            self._deadline(deadline)
+            with self._state_lock:
+                if operation_id in self._material_readback_nonces:
+                    raise SessionSafetyError("material readback operation identifier was already accepted")
+            environment = self._held_de
+            project = self._project_guard(require_saved=True, deadline=deadline)
+            self._require_held_objects(environment, project)
+            recorded = copy.deepcopy(self._identity)
+            run_dir, project_path = self.run_dir, self.project_path
+            reservation = self._active_request
+            target = run_dir / "native_materials.tsv"
+            previous = self._material_readback_outputs.get(target)
+
+            def memory_guard():
+                self._deadline(deadline)
+                self._require_held_objects(environment, project)
+                if (self._identity != recorded or self.run_dir != run_dir or self.project_path != project_path
+                        or self._owned_closed or self._de_close_returned
+                        or self._archive["state"] == "quarantined" or self._active_request is not reservation
+                        or reservation["caller_state"] != "active"):
+                    raise SessionSafetyError("material readback no longer matches the admitted owned request")
+
+            def guard():
+                memory_guard()
+                self._project_guard(require_saved=True, deadline=deadline)
+                self._require_held_objects(environment, project)
+                filename = project.filename()
+                memory_guard()
+                if not isinstance(filename, str) or not filename or Path(filename).resolve() != project_path:
+                    raise SessionSafetyError("material readback SDK filename changed during ownership observation")
+                # The fixed getters grant no permission to change archive bytes.
+                self._verify_archive_body(deadline)
+                memory_guard()
+
+            def snapshot(expected_operation, expected_signature):
+                self._check_path()
+                if _linked(target):
+                    raise SessionSafetyError("material readback destination is linked")
+                try:
+                    before = target.lstat()
+                    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or not before.st_ino:
+                        raise SessionSafetyError("material readback output is not one regular unaliased file")
+                    records, _, digest = native_materials._read_report(run_dir)
+                    after = target.lstat()
+                    stamp = native_materials._stamp(after)
+                    if native_materials._stamp(before) != stamp:
+                        raise SessionSafetyError("material readback output changed around its stable read")
+                except (OSError, ValueError) as error:
+                    raise SessionSafetyError("material readback output was not a stable bounded report: " + str(error)) from error
+                scalars = {}
+                for row in records:
+                    if row[0] in ("operation_id", "case_signature"):
+                        if len(row) != 2 or row[0] in scalars:
+                            raise SessionSafetyError("material readback has duplicate or malformed request binding")
+                        scalars[row[0]] = row[1]
+                if scalars != {"operation_id": expected_operation, "case_signature": expected_signature}:
+                    raise SessionSafetyError("material readback output case signature or nonce does not match this request")
+                memory_guard()
+                return {"identity": (after.st_dev, after.st_ino), "stamp": stamp, "sha256": digest,
+                        "operation_id": expected_operation, "case_signature": expected_signature}
+
+            def destination_guard():
+                self._check_path()
+                if _linked(target):
+                    raise SessionSafetyError("material readback destination is linked")
+                if target.exists():
+                    if previous is None:
+                        raise SessionSafetyError("material readback destination is preexisting and unowned")
+                    if snapshot(previous["operation_id"], previous["case_signature"]) != previous:
+                        raise SessionSafetyError("previously owned material readback output was replaced or changed")
+                elif previous is not None:
+                    raise SessionSafetyError("previously owned material readback output is missing")
+
+            destination_guard()
+            guard()
+            schematic = project.schematic
+            # Capture the SDK object before the final ownership observation.
+            # Recheck the pathname afterwards so a detectable outside output
+            # created by an observer cannot be overwritten by this helper.
+            # This does not eliminate the final pathname/dispatch TOCTOU.
+            guard()
+            destination_guard()
+            memory_guard()
+            self._deadline(deadline)
+            sdk_return = schematic.execute_vba_code(code)
+            guard()
+            first = snapshot(operation_id, signature)
+            guard()
+            second = snapshot(operation_id, signature)
+            if first != second:
+                raise SessionSafetyError("material readback changed between stable completion reads")
+            guard()
+            final = snapshot(operation_id, signature)
+            if second != final:
+                raise SessionSafetyError("material readback changed after final ownership observation")
+            memory_guard()
+            receipt = {"kind": "material", "operation_id": operation_id, "case_signature": signature,
+                       "source_file": "native_materials.tsv", "source_sha256": final["sha256"],
+                       "output_identity": list(final["identity"]), "evidence_kind": self.evidence_kind,
+                       "producer_binding": "exact_owned_sdk_request_and_nonce",
+                       "producer_verified": self.evidence_kind == "native_sdk", "writer_identity_proven": False,
+                       "sdk_return": sdk_return, "archive_integrity": self.archive_integrity()}
+            return {"environment": environment, "project": project, "identity": recorded,
+                    "run_dir": run_dir, "project_path": project_path, "reservation": reservation,
+                    "target": target, "output": final, "receipt": receipt}
+
+        def accept(prepared, deadline):
+            self._deadline(deadline)
+            self._require_held_objects(prepared["environment"], prepared["project"])
+            reservation = prepared["reservation"]
+            if (self._identity != prepared["identity"] or self.run_dir != prepared["run_dir"]
+                    or self.project_path != prepared["project_path"] or self._owned_closed or self._de_close_returned
+                    or self._archive["state"] == "quarantined" or self._active_request is not reservation
+                    or reservation["caller_state"] != "active" or not reservation["completed"].is_set()
+                    or operation_id in self._material_readback_nonces):
+                raise SessionSafetyError("material readback caller cannot accept the prepared owned request")
+            self._material_readback_outputs[prepared["target"]] = prepared["output"]
+            self._material_readback_nonces.add(operation_id)
+            return prepared["receipt"]
+
+        return self._request("trusted-material-readback", read, timeout_seconds, on_accept=accept)
+
     def start_solver(self, timeout_seconds=DEFAULT_REQUEST_SECONDS):
         def start(deadline):
             project = self._project_guard(require_saved=True, deadline=deadline)
             self._deadline(deadline)
             return project.model3d.start_solver()
         return self._request("start", start, timeout_seconds)
+
+    def run_solver_and_snapshot(self, timeout_seconds=DEFAULT_REQUEST_SECONDS):
+        """Run once through documented post-processing, save, and prepare a pin.
+
+        This separate synchronous SDK request retains the native lifetime if
+        its caller leaves; an abort cannot overlap a pending request. Ownership
+        and stable hashes bound an explicit SDK operation trust boundary. They
+        cannot distinguish a stable outside writer inside the permitted window
+        or establish fsync/durability. Existing quarantine is never repaired.
+        """
+        old_pin = None
+        operation_id = uuid.uuid4().hex
+        trace = []
+        token = None
+        stage = "preflight"
+
+        def token_guard(deadline, *, accepted=False):
+            self._deadline(deadline)
+            if (token is None or self._archive_writer_token is not token or token["state"] != "active"
+                    or self._active_request is not token["reservation"]
+                    or token["reservation"]["caller_state"] != "active"
+                    or token["deadline"] != deadline
+                    or self._identity != token["identity"]
+                    or self.run_dir != token["run_dir"] or self.project_path != token["project_path"]
+                    or self._owned_closed or self._de_close_returned
+                    or (self._saved_file_identity, self._saved_file_digest, self._saved) != old_pin
+                    or self._archive["state"] == "quarantined"):
+                raise SessionSafetyError("owned solver/archive operation token is no longer valid")
+            self._require_held_objects(token["environment"], token["project"])
+            if accepted and not token["reservation"]["completed"].is_set():
+                raise SessionSafetyError("solver/archive request has no conclusive completion token")
+
+        def binding_guard(deadline):
+            token_guard(deadline)
+            environment, project = token["environment"], token["project"]
+            self._guard()
+            self._require_held_objects(environment, project)
+            filename = project.filename()
+            self._deadline(deadline)
+            self._require_held_objects(environment, project)
+            if not isinstance(filename, str) or not filename or Path(filename).resolve() != token["project_path"]:
+                raise SessionSafetyError("solver/archive SDK filename is not the exact prevalidated project")
+            # Filename and PID observers may block or change Python references.
+            self._guard()
+            self._require_held_objects(environment, project)
+            self._file_identity()  # Regular, single-link archive; drift is scoped to this token.
+            # The final PID observer may have changed the project's filename.
+            # Compare the latest filename after it, then use only memory checks.
+            filename = project.filename()
+            self._deadline(deadline)
+            self._require_held_objects(environment, project)
+            if not isinstance(filename, str) or not filename or Path(filename).resolve() != token["project_path"]:
+                raise SessionSafetyError("solver/archive SDK filename changed during the ownership observation")
+            token_guard(deadline)
+
+        def observe(deadline, name, phase, *, snapshot=None):
+            nonlocal stage
+            stage = name
+            self._archive_write_observation(operation_id, name, phase, trace, snapshot=snapshot)
+            self._deadline(deadline)
+
+        def checked_call(deadline, name, function):
+            binding_guard(deadline)
+            observe(deadline, name, "before")
+            binding_guard(deadline)
+            try:
+                result = function()
+            except BaseException:
+                self._archive_write_observation(operation_id, name, "after", trace)
+                raise
+            observe(deadline, name, "after")
+            binding_guard(deadline)
+            return result
+
+        def complete(deadline):
+            nonlocal token, old_pin
+            # Capture rollback after admission, not when a possibly delayed
+            # caller first entered this Python method. No admitted peer can
+            # commit another pin while this reservation is active.
+            with self._state_lock:
+                self._deadline(deadline)
+                old_pin = (self._saved_file_identity, self._saved_file_digest, self._saved)
+            environment = self._held_de
+            project = self._project_guard(require_saved=True, deadline=deadline)
+            self._require_held_objects(environment, project)
+            self._deadline(deadline)
+            model = project.model3d
+            self._require_held_objects(environment, project)
+            self._deadline(deadline)
+            # Creation, revocation and publication share the request lock. A
+            # caller rejection cannot race a late worker into a fresh grant.
+            with self._state_lock:
+                self._deadline(deadline)
+                if self._archive["state"] == "quarantined" or self._archive_writer_token is not None:
+                    raise SessionSafetyError("archive quarantine or another writer prevents solver completion")
+                token = {"operation_id": operation_id, "state": "active", "deadline": deadline,
+                         "reservation": self._active_request, "environment": environment, "project": project,
+                         "identity": copy.deepcopy(self._identity), "run_dir": self.run_dir,
+                         "project_path": self.project_path}
+                self._archive_writer_token = token
+            binding_guard(deadline)
+            running = checked_call(deadline, "preflight_running", model.is_solver_running)
+            if type(running) is not bool or running:
+                raise SessionSafetyError("solver/archive completion requires no already running owned solver")
+            observe(deadline, "run_solver", "before")
+            # The old accepted pin is checked again at dispatch. Mutable-byte
+            # permission starts with this sole SDK call, never with a poll.
+            self._verify_archive_body(deadline)
+            binding_guard(deadline)
+            # The final ownership callbacks can themselves reveal/change bytes.
+            # Finish the strict pre-dispatch gate after those callbacks.
+            self._verify_archive_body(deadline)
+            with self._state_lock:
+                token_guard(deadline)
+                self._archive.update(state="writing", status="writing", archive_integrity_verified=False,
+                                     operation_id=operation_id, writer_attribution="unresolved")
+            token_guard(deadline)  # Rejection during lock release cannot dispatch deferred work.
+            try:
+                model.run_solver()  # Public default timeout units remain untouched.
+            except BaseException:
+                self._archive_write_observation(operation_id, "run_solver", "after", trace)
+                raise
+            observe(deadline, "run_solver", "after")
+            binding_guard(deadline)
+            running = checked_call(deadline, "solver_running", model.is_solver_running)
+            if type(running) is not bool or running:
+                raise SessionSafetyError("blocking solver completion did not confirm actual running=False")
+            info = checked_call(deadline, "solver_info", model.get_solver_run_info)
+            if not isinstance(info, dict) or info.get("state") != "SUCCESS":
+                error = SessionSafetyError("blocking solver completion requires exact native solver state SUCCESS")
+                if isinstance(info, dict) and info.get("state") in ("FAILED", "ABORTED"):
+                    # This is diagnostic evidence from actual queries, never
+                    # archive acceptance. A run_solver exception has no such
+                    # observation and cannot imply that the solver stopped.
+                    error.completed_observation = {
+                        "completion_method": "Model3D.run_solver", "operation_id": operation_id,
+                        "solver_running": False, "solver_info": copy.deepcopy(info),
+                        "write_trace": copy.deepcopy(trace)}
+                raise error
+            info = copy.deepcopy(info)
+            binding_guard(deadline)
+            checked_call(deadline, "save_results", lambda: project.save(
+                str(token["project_path"]), include_results=True, allow_overwrite=True))
+            expected = None
+            for index in range(1, 4):
+                binding_guard(deadline)
+                observe(deadline, "snapshot_" + str(index), "before")
+                snapshot = self._archive_snapshot(deadline)
+                metadata = self.project_path.stat()
+                fingerprint = (*snapshot[0], snapshot[1], metadata.st_size,
+                               metadata.st_mtime_ns, metadata.st_nlink)
+                if ((metadata.st_dev, metadata.st_ino) != snapshot[0] or metadata.st_nlink != 1
+                        or not stat.S_ISREG(metadata.st_mode) or expected is not None and fingerprint != expected):
+                    raise SessionSafetyError("solver/archive bytes or identity changed between stable completion snapshots")
+                expected = fingerprint
+                observe(deadline, "snapshot_" + str(index), "after", snapshot=snapshot)
+            # Full guards precede each snapshot; the final hash also detects
+            # changes induced by the previous guard. The final handoff performs
+            # only memory checks. A pathname TOCTOU boundary still remains.
+            token_guard(deadline)
+            return {"token": token, "snapshot": snapshot, "solver_info": info}
+
+        def accept(prepared, deadline):
+            if prepared["token"] is not token:
+                raise SessionSafetyError("solver/archive prepared token does not match its request")
+            token_guard(deadline, accepted=True)
+            identity, digest = prepared["snapshot"]
+            old_identity, old_digest, _ = old_pin
+            archive = {"state": "pinned", "status": "pinned", "archive_integrity_verified": True,
+                       "pin_operation": "run_solver_and_snapshot", "pinned_identity": list(identity),
+                       "sha256": digest, "operation_id": operation_id,
+                       "completion_method": "Model3D.run_solver",
+                       "verification_scope": "last_successful_strict_snapshot",
+                       "writer_attribution": "explicit_sdk_operation_trust_boundary",
+                       "previous_pinned_identity": list(old_identity), "previous_sha256": old_digest,
+                       "writer_identity_proven": False, "durability_guaranteed": False}
+            event = {"operation_id": operation_id, "stage": "accepted", "phase": "caller",
+                     "observed_identity": list(identity), "sha256": digest, "archive_status": "pinned"}
+            result = {"completion_method": "Model3D.run_solver", "operation_id": operation_id,
+                      "solver_info": prepared["solver_info"], "archive_integrity": copy.deepcopy(archive),
+                      "write_trace": copy.deepcopy([*trace, event])}
+            token_guard(deadline, accepted=True)
+            self._saved_file_identity, self._saved_file_digest = identity, digest
+            self._saved, self._archive = True, archive
+            token["state"] = "accepted"
+            self._archive_writer_token = None
+            # No overridable callback follows the final acceptance guard.
+            trace.append(event)
+            self._archive_write_trace.append(event)
+            del self._archive_write_trace[:-512]
+            return result
+
+        def reject():
+            if token is not None:
+                token["state"] = "revoked"
+            if self._archive_writer_token is token:
+                self._archive_writer_token = None
+            if old_pin is not None:
+                self._saved_file_identity, self._saved_file_digest, self._saved = old_pin
+            self._quarantine_archive("solver/archive completion was not accepted; previous pin retained")
+            self._append_archive_write_event(
+                {"operation_id": operation_id, "stage": "rejected", "phase": "caller",
+                 "stage_before_rejection": stage, "archive_status": self._archive["state"],
+                 "observed_identity": None}, trace)
+
+        return self._request("solver-completion", complete, timeout_seconds, on_accept=accept, on_reject=reject)
 
     def _running(self, deadline):
         project = self._project_guard(allow_cancelled=True, archive_required=False, deadline=deadline)

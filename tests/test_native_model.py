@@ -312,6 +312,15 @@ class NativeModelTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.module.resource_mesh_vba(self.case, dict(self.case['runtime'], max_cpus=cpus), report)
 
+    def test_mesh_commands_use_nominal_target_separately_from_tighter_acceptance(self):
+        self.case['mesh'] = {'target_edge_m': .0005, 'acceptance_max_edge_m': .0003}
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.write_model(directory)
+            text = self.module.resource_mesh_vba(self.case, self.case['runtime'], report)
+            self.assertIn('Mesh.MinimumStepNumberTet "38"', text)
+            self.assertIn('Solid.SetMeshStepwidthTet "absorber:region_layer", "0.5"', text)
+            self.assertNotIn('"0.3"', text)
+
     def test_mesh_macro_queries_actual_selected_mesh_and_mesher_settings(self):
         with tempfile.TemporaryDirectory() as directory:
             text = self.module.mesh_readback_vba(Path(directory))
@@ -332,6 +341,70 @@ class NativeModelTests(unittest.TestCase):
             self.assertFalse(mesh['mesh_unit_confirmed'])
             self.assertFalse(mesh['strict_mesher_size_guarantee'])
             self.assertIn('mesh_edge_unit', mesh['unresolved_gates'])
+
+    def test_legacy_oversize_mesh_returns_complete_failed_acceptance_diagnostics(self):
+        self.case['mesh'] = {'max_edge_m': .001}
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.write_model(directory)
+            (Path(directory) / 'native_mesh.tsv').write_text(mesh_text('1.16412'), encoding='utf-8')
+            mesh = self.module.read_mesh_report(self.case, Path(directory), report)
+            self.assertEqual(mesh['max_edge_raw'], 1.16412)
+            self.assertEqual(mesh['mesh_cells'], 3750)
+            self.assertAlmostEqual(mesh['max_edge_m_under_assumption'], .00116412)
+            self.assertEqual(mesh['target_edge_m'], .001)
+            self.assertEqual(mesh['acceptance_max_edge_m'], .001)
+            self.assertEqual(mesh['mesh_policy_origin'], 'legacy_max_edge_m')
+            self.assertTrue(mesh['target_exceeded_under_assumption'])
+            self.assertTrue(mesh['measurement_acceptance_required'])
+            self.assertTrue(mesh['measurement_acceptance_failed'])
+            self.assertFalse(mesh['edge_within_limit_under_assumption'])
+            self.assertEqual(mesh['measurement_acceptance']['status'], 'failed_under_unit_assumption')
+            self.assertFalse(mesh['measurement_acceptance']['accepted'])
+            self.assertFalse(mesh['mesh_unit_confirmed'])
+            self.assertFalse(mesh['mesh_freshness_confirmed'])
+            self.assertFalse(mesh['strict_mesher_size_guarantee'])
+            self.assertFalse(mesh['numerically_qualified'])
+            self.assertIn('mesh_edge_unit', mesh['unresolved_gates'])
+            self.assertIn('mesh_edge_freshness', mesh['unresolved_gates'])
+            json.dumps(mesh, allow_nan=False)
+
+    def test_target_only_oversize_has_no_implied_measured_acceptance_or_native_pass(self):
+        self.case['mesh'] = {'target_edge_m': .0005}
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.write_model(directory)
+            (Path(directory) / 'native_mesh.tsv').write_text(mesh_text('.6'), encoding='utf-8')
+            mesh = self.module.read_mesh_report(self.case, Path(directory), report)
+            self.assertTrue(mesh['target_exceeded_under_assumption'])
+            self.assertFalse(mesh['measurement_acceptance_required'])
+            self.assertFalse(mesh['measurement_acceptance_failed'])
+            self.assertIsNone(mesh['acceptance_max_edge_m'])
+            self.assertIsNone(mesh['edge_within_limit_under_assumption'])
+            self.assertEqual(mesh['measurement_acceptance']['status'], 'not_requested')
+            self.assertFalse(mesh['measurement_acceptance']['accepted'])
+            self.assertFalse(mesh['numerically_qualified'])
+            self.assertIn('mesh_edge_unit', mesh['unresolved_gates'])
+            self.assertIn('mesh_edge_freshness', mesh['unresolved_gates'])
+
+    def test_explicit_measured_acceptance_compares_independently_of_nominal_target(self):
+        for edge, failed in (('.4', False), ('.5', False), ('.6', True)):
+            with self.subTest(edge=edge), tempfile.TemporaryDirectory() as directory:
+                self.case['mesh'] = {'target_edge_m': .0003, 'acceptance_max_edge_m': .0005}
+                report = self.write_model(directory)
+                (Path(directory) / 'native_mesh.tsv').write_text(mesh_text(edge), encoding='utf-8')
+                mesh = self.module.read_mesh_report(self.case, Path(directory), report)
+                self.assertTrue(mesh['target_exceeded_under_assumption'])
+                self.assertEqual(mesh['measurement_acceptance_failed'], failed)
+                self.assertEqual(mesh['edge_within_limit_under_assumption'], not failed)
+                self.assertEqual(mesh['mesh_policy_origin'], 'explicit_target_edge_m')
+                self.assertFalse(mesh['measurement_acceptance']['accepted'])
+                self.assertFalse(mesh['numerically_qualified'])
+        self.case['mesh'] = {'target_edge_m': .0005, 'acceptance_max_edge_m': .0003}
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.write_model(directory)
+            (Path(directory) / 'native_mesh.tsv').write_text(mesh_text('.4'), encoding='utf-8')
+            mesh = self.module.read_mesh_report(self.case, Path(directory), report)
+            self.assertFalse(mesh['target_exceeded_under_assumption'])
+            self.assertTrue(mesh['measurement_acceptance_failed'])
 
     def test_mesh_reports_actual_type_count_and_getter_provenance_without_enforcement(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -386,8 +459,8 @@ class NativeModelTests(unittest.TestCase):
             self.assertFalse(plane['phase_benchmark_verified'])
             self.assertIn('solver_cpu_enforcement', report['unresolved_gates'])
 
-    def test_mesh_missing_nonfinite_nonpositive_oversize_and_units_fail(self):
-        for text in [mesh_text('nan'), mesh_text('0'), mesh_text('-.1'), mesh_text('.6'),
+    def test_mesh_missing_nonfinite_nonpositive_and_units_fail(self):
+        for text in [mesh_text('nan'), mesh_text('0'), mesh_text('-.1'),
                      mesh_text().replace('unit\tlength\tmm', 'unit\tlength\tm'),
                      mesh_text().replace('mesher_threads\t2', 'mesher_threads\t0')]:
             with self.subTest(text=text), tempfile.TemporaryDirectory() as directory:

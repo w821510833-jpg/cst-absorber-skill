@@ -12,6 +12,7 @@ import math
 from pathlib import Path
 import threading
 import time
+import uuid
 
 
 class NativeRunStopped(RuntimeError):
@@ -180,6 +181,9 @@ class ExecutableCstBackend:
         model_report = None
         raw_export = None
         mapping = None
+        completion = None
+        solver_info = None
+        solver_binding = None
         status = 'failed'
         reason_code = 'native_validation_pending'
         owned_closed = True
@@ -225,7 +229,17 @@ class ExecutableCstBackend:
                 raise
 
         def export_raw():
+            nonlocal solver_binding
             archive_checkpoint()
+            if solver_info is not None:
+                from .native_provenance import make_solver_binding
+                current_completion = copy.deepcopy(completion or {})
+                current_completion['archive_integrity'] = copy.deepcopy(state.get('archive_integrity', {}))
+                solver_binding = make_solver_binding(
+                    case, root, solver_info, completion=current_completion,
+                    process_identity=getattr(session, 'identity', None),
+                    evidence_kind=state['backend_evidence'], checkpoint=checkpoint)
+                _write(root/'solver-binding.json', solver_binding)
             adapter = self.result_adapter
             if adapter is None:
                 from . import native_results as adapter
@@ -239,6 +253,11 @@ class ExecutableCstBackend:
             exported = adapter.export_raw_results(session.project_path,root/'raw-results',
                                                    results_module=results_module,stop_event=event)
             state['raw_results'] = 'raw-results/resulttree.json'
+            if solver_binding is not None:
+                from .native_provenance import bind_raw_provenance
+                provenance = bind_raw_provenance(exported, solver_binding, case, checkpoint=checkpoint)
+                _write(root/'result-provenance.json', provenance)
+                state['unresolved_gates'].extend(provenance['unresolved_gates'])
             return adapter,exported
 
         try:
@@ -303,24 +322,88 @@ class ExecutableCstBackend:
             (root/'cpu-mesh.vba').write_text(code,encoding='utf-8')
             session.add_to_history('cpu_mesh',code,timeout_seconds=timeout())
             session.save(include_results=True, timeout_seconds=timeout())
-            stage('start_solver')
-            solver_start_requested = True
-            state['CST_execution'] = 'solver_start_requested'
-            session.start_solver(timeout_seconds=timeout())
-            state['CST_execution'] = 'solver_started'
-            while True:
-                checkpoint()
-                if not session.is_solver_running(timeout_seconds=timeout()):
-                    solver_finished = True  # Stopped is distinct from SUCCESS.
-                    break
-                event.wait(min(self.poll_interval_seconds,max(.001,deadline-time.monotonic())))
-            stage('read_solver_info')
-            info = session.get_solver_run_info(timeout_seconds=timeout())
+            combined = getattr(session, 'run_solver_and_snapshot', None)
+            if self.acceptance_run and callable(combined):
+                stage('run_solver_and_snapshot')
+                solver_start_requested = True
+                state['CST_execution'] = 'solver_start_requested'
+                # The documented synchronous call consumes the work budget;
+                # a caller timeout never authorizes concurrent native cleanup.
+                completion = combined(timeout_seconds=max(.001, deadline-time.monotonic()))
+                if (not isinstance(completion, dict) or
+                        completion.get('completion_method') != 'Model3D.run_solver'):
+                    raise ValueError('documented solver completion evidence is missing')
+                solver_finished = True
+                info = completion.get('solver_info')
+                state['archive_integrity'] = completion.get('archive_integrity')
+                _write(root/'archive-completion.json', completion)
+                state['completion_method'] = completion['completion_method']
+            else:
+                if self.acceptance_run and state['backend_evidence'] == 'native_sdk':
+                    raise ValueError('actual acceptance transport lacks documented completion operation')
+                stage('start_solver')
+                solver_start_requested = True
+                state['CST_execution'] = 'solver_start_requested'
+                session.start_solver(timeout_seconds=timeout())
+                state['CST_execution'] = 'solver_started'
+                while True:
+                    checkpoint()
+                    if not session.is_solver_running(timeout_seconds=timeout()):
+                        solver_finished = True  # Stopped is distinct from SUCCESS.
+                        break
+                    event.wait(min(self.poll_interval_seconds,max(.001,deadline-time.monotonic())))
+                stage('read_solver_info')
+                info = session.get_solver_run_info(timeout_seconds=timeout())
+            solver_info = copy.deepcopy(info)
             _write(root/'solver-info.json',{'info':info, 'state_policy':'exact native state SUCCESS required'})
             if not isinstance(info,dict) or info.get('state') != 'SUCCESS':
                 reason_code = 'native_solver_not_success'
                 raise ValueError('native solver did not report SUCCESS; actual info retained')
             state['CST_execution'] = 'solver_finished'
+            from .native_provenance import make_solver_binding
+            solver_binding = make_solver_binding(
+                case, root, info, completion=completion,
+                process_identity=getattr(session, 'identity', None), evidence_kind=state['backend_evidence'], checkpoint=checkpoint)
+            _write(root/'solver-binding.json', solver_binding)
+            state['unresolved_gates'].extend(solver_binding['unresolved_gates'])
+            material_reader = getattr(session, 'execute_material_readback', None)
+            if callable(material_reader):
+                stage('read_material_parameters')
+                from .native_materials import read_material_report
+                operation_id = (completion or {}).get('operation_id') or uuid.uuid4().hex
+                produced = material_reader(case, operation_id=operation_id, timeout_seconds=timeout())
+                material_report = read_material_report(case, root, model_report, operation_id=operation_id)
+                if (not isinstance(produced, dict) or
+                        produced.get('source_sha256') != material_report['source_sha256'] or
+                        produced.get('operation_id') != operation_id):
+                    raise ValueError('material readback differs from the owned SDK operation output')
+                producer_verified = (
+                    state['backend_evidence'] == 'native_sdk'
+                    and produced.get('evidence_kind') == 'native_sdk'
+                    and produced.get('kind') == 'material'
+                    and produced.get('case_signature') == case['signature']
+                    and produced.get('source_file') == 'native_materials.tsv'
+                    and produced.get('producer_binding') == 'exact_owned_sdk_request_and_nonce'
+                    and produced.get('producer_verified') is True)
+                if state['backend_evidence'] == 'native_sdk' and not producer_verified:
+                    raise ValueError('native material producer lacks an accepted owned-request receipt')
+                _write(root/'material-readback-operation.json', produced)
+                material_report['producer_verified'] = producer_verified
+                material_report['producer_binding'] = produced.get('producer_binding')
+                material_report['writer_identity_proven'] = False
+                for entry in material_report['materials']:
+                    for provenance in entry['getter_provenance'].values():
+                        provenance['producer_verified'] = producer_verified
+                material_report['evidence_kind'] = state['backend_evidence']
+                material_report['solver_binding'] = {
+                    'case_signature':case['signature'], 'execution_operation_id':solver_binding['execution_operation_id'],
+                    'solver_info_source':solver_binding['solver_info_source'],
+                    'association_scope':solver_binding['association_scope'],
+                    'native_solver_response_linkage_verified':False}
+                _write(root/'material-readback.json', material_report)
+                state['unresolved_gates'].extend(material_report['unresolved_gates'])
+            else:
+                state['unresolved_gates'].append('material_parameter_readback')
             stage('read_generated_mesh')
             try:
                 readback = getattr(session, 'execute_readback', None)
@@ -330,6 +413,8 @@ class ExecutableCstBackend:
                     session.execute_vba(model.mesh_readback_vba(root),timeout_seconds=timeout())
                 mesh_report = model.read_mesh_report(case, root, model_report)
                 _write(root/'mesh-readback.json',mesh_report)
+                if mesh_report.get('measurement_acceptance_failed') is True:
+                    raise ValueError('measured mesh edge exceeds the separate acceptance ceiling')
                 threads = mesh_report.get('mesher_threads')
                 if type(threads) is not int or threads != runtime.get('max_cpus'):
                     raise ValueError('actual mesher thread count differs from immutable controller runtime')
@@ -383,6 +468,23 @@ class ExecutableCstBackend:
             else:
                 status,reason_code = 'failed','native_validation_pending'
         except BaseException as error:
+            from .native_sdk import SessionSafetyError
+            observed = getattr(error, 'completed_observation', None)
+            if (isinstance(error, SessionSafetyError) and isinstance(observed, dict)
+                    and observed.get('completion_method') == 'Model3D.run_solver'
+                    and observed.get('solver_running') is False
+                    and isinstance(observed.get('solver_info'), dict)):
+                # Retain an actual stopped failure observation without accepting
+                # any archive or inferring a successful completion transaction.
+                solver_finished = True
+                solver_info = copy.deepcopy(observed['solver_info'])
+                state['CST_execution'] = 'solver_stopped_completion_rejected'
+                state['completion_failure_observation'] = copy.deepcopy(observed)
+                _write(root/'solver-info.json', {'info':solver_info,
+                    'state_policy':'actual stopped observation; archive completion was rejected'})
+                _write(root/'archive-completion-failure.json', observed)
+                if solver_info.get('state') != 'SUCCESS':
+                    reason_code = 'native_solver_not_success'
             state['errors'].append({'type':type(error).__name__,'message':str(error),'stage':state['stage']})
             from .native_sdk import SessionCancelled
             cancellation = (isinstance(error,SessionCancelled)
@@ -424,6 +526,21 @@ class ExecutableCstBackend:
             elif creation_requested:
                 owned_closed = False
             if session is not None:
+                trace_query = getattr(session, 'archive_write_trace', None)
+                if callable(trace_query):
+                    try:
+                        trace = trace_query()  # Cached only; never invoke SDK or accept an archive.
+                        if not isinstance(trace, list):
+                            raise ValueError('cached archive write trace must be a list')
+                        _write(root/'archive-write-trace.json', {
+                            'schema_version':'cst-archive-write-trace/1',
+                            'snapshot_scope':'cached_observation_at_cleanup_not_completion_proof',
+                            'owned_closed':owned_closed, 'events_may_continue':not owned_closed,
+                            'events':trace, 'native_acceptance':'not_run', 'numerically_qualified':False})
+                        state['archive_write_trace'] = 'archive-write-trace.json'
+                    except Exception as trace_error:
+                        state['errors'].append({'type':type(trace_error).__name__,
+                            'message':str(trace_error), 'stage':'persist_archive_write_trace'})
                 # This is cached control-plane evidence, never a new archive pin
                 # or permission to export. Preserve quarantine even when an
                 # earlier stage failed before reaching verify_saved_archive.

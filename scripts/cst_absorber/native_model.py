@@ -322,17 +322,18 @@ def read_model_report(case, artifact_root):
 
 
 def resource_mesh_vba(case, runtime, report):
-    """Apply confirmed per-solver/per-mesher settings and candidate tet size controls."""
+    """Apply requested resources and nominal tet sizing, without a hard edge guarantee."""
+    from .contracts import resolve_mesh_policy
     cpus = runtime.get('max_cpus')
     if isinstance(cpus, bool) or not isinstance(cpus, int) or cpus <= 0:
         raise ValueError('max_cpus must be a positive integer')
-    edge = _number(case['mesh']['max_edge_m'], 'maximum edge', positive=True)
+    edge = resolve_mesh_policy(case['mesh'])['target_edge_m']
     domain = report['domain_m']
     diagonal = math.sqrt(sum((b - a) ** 2 for a, b in zip(*domain)))
     ratio = _number(diagonal / edge, 'domain diagonal to mesh-edge ratio', positive=True)
     steps = math.ceil(ratio)
     factor = _number(report['units']['geometry_SI_to_unit'], 'geometry conversion', positive=True)
-    lines = ["' Settings are size controls; actual mesh statistics require subsequent readback.",
+    lines = ["' Nominal size controls allow quality-related edge variation; independent acceptance requires readback.",
              'With FDSolver', ' .UseParallelization "True"', ' .MaxCPUs ' + _q(cpus),
              ' .MaximumNumberOfCPUDevices "1"', 'End With',
              'Mesh.SetParallelMesherMode "Tet", "user-defined"',
@@ -365,7 +366,12 @@ def mesh_readback_vba(artifact_root):
 
 
 def read_mesh_report(case, root, model_report):
-    """Check edge under an explicit project-unit assumption, never certify that unit."""
+    """Return checked diagnostics, including acceptance failure, under a unit assumption.
+
+    Invalid readback data raises. A valid longest-edge overshoot is retained in
+    the report so the caller can save evidence before applying its failure gate.
+    """
+    from .contracts import resolve_mesh_policy
     records, raw = _read_records(root, 'native_mesh.tsv', 'native-mesh-v1')
     values, sources = {}, {}
     for row in records:
@@ -405,9 +411,14 @@ def read_mesh_report(case, root, model_report):
     if min_edge > raw_edge:
         raise ValueError('native minimum mesh edge exceeds maximum edge')
     converted = _number(raw_edge * factor, 'converted maximum mesh edge', positive=True)
-    limit = _number(case['mesh']['max_edge_m'], 'requested maximum mesh edge', positive=True)
-    if converted > limit * (1 + 1e-6):
-        raise ValueError('actual maximum mesh edge exceeds limit under declared project-unit assumption')
+    policy = resolve_mesh_policy(case['mesh'])
+    target, limit = policy['target_edge_m'], policy['acceptance_max_edge_m']
+    target_exceeded = converted > target * (1 + 1e-6)
+    within_limit = converted <= limit * (1 + 1e-6) if limit is not None else None
+    acceptance_failed = within_limit is False
+    acceptance_status = ('not_requested' if limit is None else
+                         'failed_under_unit_assumption' if acceptance_failed else
+                         'within_limit_under_unit_assumption')
     return {'schema_version': '1.0', 'status': 'mesh_report_checked_with_unit_assumption',
             'source_file': 'native_mesh.tsv', 'raw_records': raw, 'evidence_kind': 'readback_file',
             'max_edge_raw': raw_edge, 'project_length_unit': values['unit'],
@@ -418,7 +429,18 @@ def read_mesh_report(case, root, model_report):
             'assumed_geometry_to_SI': factor,
             'unit_assumption': 'GetMaximumEdgeLength is assumed to use the project length unit; not established by public API evidence.',
             'max_edge_m_under_assumption': converted, 'requested_max_edge_m': limit,
-            'edge_within_limit_under_assumption': True, 'mesh_unit_confirmed': False,
+            'target_edge_m': target, 'acceptance_max_edge_m': limit,
+            'mesh_policy_origin': policy['policy_origin'],
+            'sizing_target_semantics': 'Nominal unstructured cell sizing; mesh quality adjustments may produce larger edges.',
+            'target_exceeded_under_assumption': target_exceeded,
+            'measurement_acceptance_required': limit is not None,
+            'measurement_acceptance_failed': acceptance_failed,
+            'measurement_acceptance': {'criterion': 'selected_mesh_longest_edge',
+                'status': acceptance_status, 'accepted': False, 'limit_m': limit,
+                'comparison_relative_tolerance': 1e-6,
+                'unit_confirmed': False, 'freshness_confirmed': False},
+            'edge_within_limit_under_assumption': within_limit, 'mesh_unit_confirmed': False,
+            'mesh_freshness_confirmed': False,
             'strict_mesher_size_guarantee': False, 'mesher_mode': values['mesher_mode'],
             'mesher_threads': threads, 'mesher_threads_evidence': 'configured_process_count',
             'mesher_thread_enforcement_verified': False, 'solver_cpu_enforcement_verified': False,

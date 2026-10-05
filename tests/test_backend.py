@@ -333,7 +333,7 @@ class BackendTests(unittest.TestCase):
                           'requested FD interpolation policy needs its own provenance')
             policy = acceptance['material_solver_policy']
             self.assertFalse(policy['requested_TDCompatibleMaterials'])
-            self.assertEqual(policy['documented_table_treatment'], 'linear_interpolation_when_TD_fit_disabled')
+            self.assertEqual(policy['documented_table_treatment'], 'volumetric_response_undocumented')
             self.assertEqual(policy['native_setting_readback'], 'unavailable_public_getter')
             self.assertEqual(policy['solver_response_linkage'], 'unverified')
             self.assertFalse(acceptance['material_response_source_roles']['roles_interchangeable'])

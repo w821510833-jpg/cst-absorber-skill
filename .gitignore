@@ -64,3 +64,6 @@ temp/
 !examples/preview/plot_metadata.json
 !examples/preview/reflection_loss.png
 !examples/preview/reflection_loss.svg
+
+# Original distribution integrity record; excludes its own bytes.
+!MANIFEST.json

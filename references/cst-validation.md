@@ -1,12 +1,15 @@
 # CST native acceptance for the executable preview
 
-The native backend is an **implemented experimental execution chain**. One
-synthetic 0.2.1 case solved, but automatic end-to-end acceptance **failed**.
-0.2.2 repairs are offline tested and have not been executed in CST; see
-[sanitized findings](native-acceptance-0.2.2.md). Preparation is offline. Explicit authorization,
-exclusive resources and acceptance-run/result-profile admission enable a later
-native invocation. Development tests used injected interfaces only; they do not
-establish CST build compatibility, material fitting or numerical qualification.
+The native backend is an **implemented experimental execution chain**.
+The 0.2.2 original synthetic plate was retested: solver SUCCESS and automatic
+owned closure were confirmed, but native end-to-end acceptance **failed** on
+mesh/archive evidence. The earlier 0.2.1 failure remains historical.
+**0.2.3-preview is an offline review candidate and has not been run in CST.** See
+[sanitized findings](native-acceptance-0.2.2.md) and
+[completion review](native-write-completion-review.md). Preparation is offline.
+Explicit authorization, exclusive resources and acceptance-run/result-profile
+admission enable an authorized native invocation. Injected development tests do
+not establish native compatibility, material usage or numerical qualification.
 
 `prepare_cst(case, out_dir)` accepts exactly one prepared case from `build_plan`. It produces original command candidates for periodic PEC backing, explicit rectangular cell lengths, native multi-material bricks or transformed closed region STLs, dielectric/magnetic material fitting and the configured incident Floquet mode. Explicit batch cases can call the same preparation function once per listed case. No additional parameter grid or design is generated.
 
@@ -18,8 +21,10 @@ Unapproved calls return `unsupported_validation` before SDK imports or session
 creation. `owned_closed=true` then means `session_created=false`, not live cleanup.
 The admitted chain creates a fresh DE/project, sets units before geometry,
 submits original history, checks model readback, applies CPU/mesh controls,
-starts the asynchronous solver and polls it, saves/closes its own project,
-exports actual saved results and closes its owned DE. Actual process observation
+uses the separate documented synchronous solver/post-processing completion path
+for admitted acceptance when available, saves/closes its own project, exports
+actual saved results and closes its owned DE. The asynchronous start/poll path
+retains its strict guards; it is not followed by a second solver dispatch to wait. Actual process observation
 is limited to the PID obtained from that newly created DE; no attach, existing
 session enumeration, name killing or process termination is implemented.
 
@@ -38,11 +43,18 @@ Held-session controls and archive integrity have distinct guards. Stable inode
 and SHA256 checks quarantine unaccepted archive changes before content writes
 and export, while exact owned polling/abort/without-saving closure remain
 available. Linked or changed run/project paths, wrong held objects and unknown
-identity still block unsafe control. Explicit synchronous save is a checked
-writer trust boundary; asynchronous solver replacement never silently repins.
-The pathname SDK retains a TOCTOU boundary and lacks handle-based atomic-save
-writer attribution. A quarantined archive blocks automatic final save/export.
-Use private owned run directories. Native CLI supervision retains late worker,
+identity still block unsafe control. The candidate synchronous completion path
+prevalidates the old archive and held binding, allows only its named run/save
+operation window, requires actual stopped/SUCCESS information, explicitly saves
+results, and prepares consistent strict snapshots. Only caller acceptance commits
+the pin; failed/late/cancelled completion cannot. Existing quarantine is sticky;
+asynchronous solver replacement never silently repins. Stage observations help
+locate a future first drift without asserting a writer. The SDK operation window
+cannot distinguish a stable competing writer inside it, and the public save API
+does not promise writer-drain or durable filesystem completion. The pathname SDK
+retains a TOCTOU boundary. A quarantined archive blocks automatic final save/export.
+A pending synchronous request cannot be concurrently aborted/closed. Use private
+owned run directories. Native CLI supervision retains late worker,
 cleanup and SDK obligations; API callers must explicitly use RunSupervisor.
 
 ## Preparation artifacts
@@ -59,14 +71,17 @@ and other geometry paths remain unaccepted. A watertight input STL is insufficie
 Prepared canonical samples use exp(+j omega t), with epsilon=epsilon'-j epsilon'' and mu=mu'-j mu''. Native table commands receive **positive loss columns** epsilon'' and mu''. The configuration sampler folds electrical conductivity into epsilon once when the original table excludes it; the native candidate sets Sigma to zero. Original conductivity and the native zero value remain in the expected-material table. Tables already containing conductivity are not given another conductivity contribution.
 
 The native candidate uses the documented general Nth-order fitting interface.
-It also requests FDSolver.TDCompatibleMaterials=False: the installed frequency
-solver help documents linear interpolation of tabulated properties with TD
-fitting disabled. Data list, FD - Interpolated and Fit are distinct actual
-material source roles; a title containing Fit does not establish leaf role.
-Requested settings and matching FD curves do not establish actual solver
-linkage or native Sigma; those gates remain unresolved. Nth-order Fit is an
-approximation distinct from FD table interpolation and from the core's
-piecewise-linear sampling. Native fitted curves must be exported and compared
+It also requests FDSolver.TDCompatibleMaterials=False. The inspected setter
+documentation discusses particular material types and does not establish a general
+volumetric epsilon/mu table-interpolation guarantee. No actual FD policy getter
+was verified. Data list, FD - Interpolated and Fit are distinct actual source
+roles; a title containing Fit does not establish leaf role. Requested settings
+and matching FD curves do not prove actual solver linkage. Candidate formal
+Material.GetSigma XYZ and Material.GetRho read actual shape-assigned parameters;
+they have not been exercised natively in this candidate. All Sigma axes must be
+zero when conductivity was folded into epsilon once. Declared per-material
+density is compared without an invented default. Nth-order Fit is an approximation
+distinct from the observed FD curve and the core's piecewise-linear sampling. Native fitted curves must be exported and compared
 with canonical values at existing exact requested frequencies, under declared
 error tolerances and coverage policy. A one-point fitting input does not establish
 a valid dispersive model and needs separate native acceptance. No causality or
@@ -77,13 +92,28 @@ in kg/m3 when supplied; missing density is explicit rather than invented.
 
 1. Use a fresh `DesignEnvironment.new` and `new_mws`, save only to a new owned path, and verify the bounded solve and owned-session closure. Never attach to, discover, close or kill another user's session. Result reading must use this saved unpacked project only.
 2. Read back each named region's material, solid count, native volume and bounds, and the calculation-domain origin/height. Confirm unit conversions and actual cell lengths. `UnitCellFitToBoundingBox=False` prevents sparse solids from changing the specified lattice lengths; it does not certify domain placement.
-   Positive lengths use a 1 ppm relative consistency budget and positive volumes
+   Candidate formal material parameter readback retains case/operation/source
+   hashes and actual shape assignments; parameter agreement does not establish
+   solver-response usage. Positive lengths use a 1 ppm relative consistency budget and positive volumes
    use 10 ppm, with no fixed absolute SI floor. Bounds also use the corresponding
    expected axis extent, so translating a thin region cannot enlarge its allowed
    size error. This is a conservative input/readback consistency policy; it does
    not establish CST CAD precision, mesher capability or a supported minimum scale.
-3. Verify maximum-edge controls and readback. The executor applies tetrahedral size controls from actual domain dimensions, per-shape step width and independent solver/mesher CPU settings. It checks the configured mesher process count against the immutable runtime snapshot. Actual mesher enforcement and solver CPU enforcement remain unverified. `GetMaximumEdgeLength` is retained under an explicit project-unit assumption; its units/freshness and a strict size guarantee remain unresolved.
-4. Verify the reference plane and phase. `reference_plane_m` is an air offset above `geometry.cell.height_m`: zref=height+reference_plane_m, zport=height+air_height_m. The Zmax deembedding distance is reference_plane_m-air_height_m, nonpositive for a plane within that air region. Retain native readback of the resulting plane and complex phase.
+3. Separate nominal tetrahedral sizing from measured acceptance. The executor
+   uses actual domain dimensions and per-shape widths for a nominal target.
+   `mesh.target_edge_m` and optional `mesh.acceptance_max_edge_m` are separate;
+   legacy `max_edge_m` retains both its old target and measured ceiling. Do not
+   auto-relax the ceiling or claim a strict mesher bound. Preserve checked oversize
+   reports before failing measured acceptance. The configured mesher count is
+   checked against the immutable runtime snapshot; actual stage observations do
+   not prove global CPU enforcement. `GetMaximumEdgeLength` retains an explicit
+   project-unit assumption; its units and solve/mesh freshness remain unverified.
+4. Verify the reference plane and phase. `reference_plane_m` is an air offset
+   above `geometry.cell.height_m`: zref=height+reference_plane_m,
+   zport=height+air_height_m. The requested Zmax deembedding distance is
+   reference_plane_m-air_height_m. The documented setter is not an actual plane
+   getter; no verified formal getter was found. Keep the actual plane unknown and
+   the phase/plane gate closed until independent evidence is available.
 5. Export the fitted epsilon/mu response and fitting error; compare with input values. Do not substitute the input table for a native fitted response. Check measured and authorized extrapolated domains separately.
 6. Read actual mode names/indexes and the saved native result tree. Confirm that every required physical mode exists at every solved point and that all planned frequencies were actually solved. A preview evaluated at one sorting frequency cannot certify whole-band mode propagation.
 7. Retain actual complex S, reference impedance and Gamma with their original labels. Confirm the Gamma unit and convert it explicitly to 1/m. Gamma=alpha+j beta and an inverse-length dimension do not establish the actual export unit. Independently reconcile propagation/cutoff with the vacuum lattice; preserve native data rather than replacing it with analytic Gamma.
@@ -181,8 +211,14 @@ observed-point errors are retained. Fit matches produce
 An FD match does not close `material_fit_readback`,
 `material_solver_response_linkage` or `material_conductivity_readback`.
 The source role/normalization declarations still require native verification.
-Current reference-plane and mesh unit/freshness gates keep even mapped runs
-validation-pending. `--acceptance-run` always returns failed/pending while
+Candidate `solver-binding.json` and `result-provenance.json` retain actual SDK
+information, case/operation IDs, input/archive hashes and actual curve run IDs,
+parameters/source roles. Archive association is rechecked; changed/deleted bytes
+cannot keep a verified binding. Same owned invocation/file association is weaker
+than native curve-run authentication or proof of which material response was used.
+Formal Sigma/Rho parameter checks do not remove FD policy/source, reference-plane
+or solver-material linkage gates. Current reference-plane and mesh unit/freshness
+gates keep even mapped runs validation-pending. `--acceptance-run` always returns failed/pending while
 retaining actual evidence; it is not a physical-success cache entry.
 
 ## Documented API evidence
@@ -191,17 +227,18 @@ The following are relative paths within the installed **public CST 2025 Online H
 
 | Interface | Public help source |
 | --- | --- |
-| New environment/project, history and asynchronous solving | `Python/source/cst.interface.html` |
+| New environment/project, save, asynchronous start and synchronous solver/post-processing completion | `Python/source/cst.interface.html` |
 | Saved-project result tree, complex data, labels | `Python/source/cst.results.html` |
 | Material Epsilon, Mu, Sigma, Rho and numeric dielectric/magnetic fitting | `mergedProjects/VBA_3D/special_vbalayer/special_vbalayerolayer_object.htm` (page title: Material Object) |
 | Engineering loss sign and conductivity loss | `mergedProjects/3D/special_overview/special_overview_material_overview_hf.htm` |
-| Frequency-domain table interpolation with Fit as in Time Domain disabled | `mergedProjects/3D/special_solvopt/special_solvopt_w3d_specials.htm` (Materials frame) |
+| FD materials settings, scoped to their documented material types; no actual policy getter verified | `mergedProjects/3D/special_solvopt/special_solvopt_w3d_specials.htm` (Materials frame); `mergedProjects/VBA_3D/special_vbasolver/special_vbasolver_fdsolver_object.htm` |
 | Brick and explicit STL unit import | `mergedProjects/VBA_3D/common_vbabasicsolids/common_vbabrick_object.htm`; `mergedProjects/VBA_3D/common_vbaimpexp/common_vbaie_stl.htm` |
 | Region material assignment and solid queries | `mergedProjects/VBA_3D/common_vbasolido/common_vbasolido_solid_object.htm` |
 | Explicit lattice and scan-angle conventions | `mergedProjects/VBA_3D/special_vbasolver/special_vbasolver_boundary_object.htm` |
 | Background padding and component creation | `mergedProjects/VBA_3D/special_vbasolver/special_vbasolver_background_object.htm`; `mergedProjects/VBA_3D/special_vbalayer/special_vbalayerocomponent_object.htm` |
 | Floquet modes and reference-plane distance setter | `mergedProjects/VBA_3D/special_vbaports/floquetport_object.htm` |
 | Mesh type/count/edge and configured mesher controls | `mergedProjects/VBA_3D/special_vbamesh/special_vbamesho.htm` |
+| Nominal unstructured sizing and non-strict size limits | `mergedProjects/3D/special_mesh/special_mesh_mesh_props_unstructured_new.htm` (Definition of cell size) |
 | Single frequency samples and native power-loss calculation | `mergedProjects/VBA_3D/special_vbasolver/special_vbasolver_fdsolver_object.htm` |
 | Global solver frequency range | `mergedProjects/VBA_3D/special_vbasolver/special_vbasolver_solver_object.htm` |
 | Gamma definition; time-averaged power meaning | `mergedProjects/3D/special_postpr/special_postpr_pp_modeplot.htm`; `mergedProjects/3D/special_postpr/special_postpr_power_view.htm` |

@@ -410,11 +410,34 @@
       "properties": {
         "max_edge_m": {
           "type": "number",
-          "exclusiveMinimum": 0
+          "exclusiveMinimum": 0,
+          "description": "Legacy field: nominal SI mesh sizing target and independent measured longest-edge acceptance ceiling. Must be the sole mesh field. Native sizing does not guarantee this ceiling; readback units/freshness require separate verification."
+        },
+        "target_edge_m": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Nominal SI target for unstructured cell sizing; mesh quality adjustments may produce larger or smaller edges. Mutually exclusive with max_edge_m. Does not implicitly request measured longest-edge acceptance."
+        },
+        "acceptance_max_edge_m": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Optional independent SI longest-edge acceptance ceiling with target_edge_m. It requests a measured comparison, not a native mesher guarantee; unknown units/freshness remain unresolved."
         }
       },
-      "required": [
-        "max_edge_m"
+      "oneOf": [
+        {
+          "required": ["max_edge_m"],
+          "not": {
+            "anyOf": [
+              {"required": ["target_edge_m"]},
+              {"required": ["acceptance_max_edge_m"]}
+            ]
+          }
+        },
+        {
+          "required": ["target_edge_m"],
+          "not": {"required": ["max_edge_m"]}
+        }
       ],
       "additionalProperties": false
     },

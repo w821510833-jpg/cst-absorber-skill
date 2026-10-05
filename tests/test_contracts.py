@@ -50,6 +50,56 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(plan['runtime']['max_attempts'], 1)
         self.assertAlmostEqual(plan['cases'][0]['region_masses_kg']['layer'], .0001)
 
+    def test_legacy_mesh_policy_keeps_original_input_and_case_signature(self):
+        raw = config_fixture()
+        normalized = self.module.normalize_config(raw, Path('.'))
+        self.assertEqual(normalized['case']['mesh'], {'max_edge_m': .0005})
+        self.assertEqual(self.module.build_plan(raw, Path('.'))['cases'][0]['signature'],
+                         'e7632d1a97e6f9e7f746e75e3a7c6a8385c10f5c019ba09edfded596de642b57')
+        self.assertEqual(self.module.resolve_mesh_policy(normalized['case']['mesh']),
+                         {'target_edge_m': .0005, 'acceptance_max_edge_m': .0005,
+                          'policy_origin': 'legacy_max_edge_m'})
+
+    def test_mesh_target_and_independent_acceptance_change_case_identity(self):
+        raw = config_fixture()
+        raw['case']['mesh'] = {'target_edge_m': .0005}
+        target = self.module.build_plan(raw, Path('.'))['cases'][0]
+        self.assertEqual(target['mesh'], {'target_edge_m': .0005})
+        self.assertEqual(self.module.resolve_mesh_policy(target['mesh']),
+                         {'target_edge_m': .0005, 'acceptance_max_edge_m': None,
+                          'policy_origin': 'explicit_target_edge_m'})
+        raw['case']['mesh']['acceptance_max_edge_m'] = .0003
+        explicit = self.module.build_plan(raw, Path('.'))['cases'][0]
+        self.assertEqual(self.module.resolve_mesh_policy(explicit['mesh'])['acceptance_max_edge_m'], .0003)
+        self.assertNotEqual(target['signature'], explicit['signature'])
+        raw['case']['mesh']['acceptance_max_edge_m'] = .0004
+        self.assertNotEqual(explicit['signature'], self.module.build_plan(raw, Path('.'))['cases'][0]['signature'])
+        self.assertNotEqual(target['signature'], self.module.build_plan(config_fixture(), Path('.'))['cases'][0]['signature'])
+
+    def test_mesh_policy_rejects_missing_target_alias_conflicts_and_unknown_fields(self):
+        variants = [{}, {'acceptance_max_edge_m': .001},
+                    {'max_edge_m': .0005, 'target_edge_m': .0005},
+                    {'max_edge_m': .0005, 'acceptance_max_edge_m': .001},
+                    {'target_edge_m': .0005, 'max_edges_m': [.001]}]
+        for mesh in variants:
+            with self.subTest(mesh=mesh):
+                raw = config_fixture()
+                raw['case']['mesh'] = mesh
+                with self.assertRaises(ValueError):
+                    self.module.normalize_config(raw, Path('.'))
+
+    def test_canonical_mesh_values_and_public_resolver_reject_malformed_numbers(self):
+        for field in ('target_edge_m', 'acceptance_max_edge_m'):
+            for value in (True, '2', math.nan, math.inf, 10**1000, 0, -1):
+                with self.subTest(field=field, value=value):
+                    mesh = {'target_edge_m': .0005, field: value}
+                    raw = config_fixture()
+                    raw['case']['mesh'] = mesh
+                    with self.assertRaises(ValueError):
+                        self.module.normalize_config(raw, Path('.'))
+                    with self.assertRaises(ValueError):
+                        self.module.resolve_mesh_policy(mesh)
+
     def test_batch_requires_confirmation_and_finite_explicit_cases(self):
         raw = config_fixture()
         raw['cases'] = [raw.pop('case'), dict(case_fixture(), id='second')]

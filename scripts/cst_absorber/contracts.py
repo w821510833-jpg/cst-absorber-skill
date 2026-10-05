@@ -58,6 +58,27 @@ def _identifier(value, label):
     return value
 
 
+def resolve_mesh_policy(mesh: dict) -> dict:
+    """Resolve nominal sizing and independent acceptance without changing inputs.
+
+    A sole legacy max_edge_m keeps both its sizing and measured-ceiling roles.
+    Explicit target_edge_m does not request measured acceptance unless an
+    acceptance_max_edge_m is supplied separately. No native guarantee follows.
+    """
+    _object(mesh, {'max_edge_m', 'target_edge_m', 'acceptance_max_edge_m'}, set(), 'mesh')
+    if 'max_edge_m' in mesh:
+        _object(mesh, {'max_edge_m'}, {'max_edge_m'}, 'legacy mesh')
+        target = _number(mesh['max_edge_m'], 'max_edge_m', positive=True)
+        return {'target_edge_m': target, 'acceptance_max_edge_m': target,
+                'policy_origin': 'legacy_max_edge_m'}
+    _object(mesh, {'target_edge_m', 'acceptance_max_edge_m'}, {'target_edge_m'}, 'mesh')
+    target = _number(mesh['target_edge_m'], 'target_edge_m', positive=True)
+    acceptance = (_number(mesh['acceptance_max_edge_m'], 'acceptance_max_edge_m', positive=True)
+                  if 'acceptance_max_edge_m' in mesh else None)
+    return {'target_edge_m': target, 'acceptance_max_edge_m': acceptance,
+            'policy_origin': 'explicit_target_edge_m'}
+
+
 def normalize_config(raw: dict, base_dir: Path) -> dict:
     """Validate explicit inputs and return one normalized single/batch contract."""
     _object(raw, {'schema_version', 'execution', 'case', 'cases', 'runtime'},
@@ -120,8 +141,9 @@ def normalize_config(raw: dict, base_dir: Path) -> dict:
         scenario['reference_plane_m'] = _number(scenario['reference_plane_m'], 'reference_plane_m', nonnegative=True)
         if scenario['reference_plane_m'] > scenario['air_height_m']:
             raise ValueError('reference plane must lie in the air interval')
-        _object(case['mesh'], {'max_edge_m'}, {'max_edge_m'}, 'mesh')
-        case['mesh']['max_edge_m'] = _number(case['mesh']['max_edge_m'], 'max_edge_m', positive=True)
+        resolve_mesh_policy(case['mesh'])
+        for mesh_key in case['mesh']:
+            case['mesh'][mesh_key] = _number(case['mesh'][mesh_key], mesh_key, positive=True)
         analysis = case['analysis']
         _object(analysis, {'band_Hz', 'max_gap_Hz', 'threshold_R'}, {'band_Hz', 'max_gap_Hz'}, 'analysis')
         band = analysis['band_Hz']
